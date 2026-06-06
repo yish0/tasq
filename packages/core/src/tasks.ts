@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { TaskNotFoundError } from "./errors";
+import { InvalidStatusError, TaskNotFoundError } from "./errors";
+import { isTaskStatus } from "./types";
 import type {
   CreateTaskInput,
   Task,
@@ -148,6 +149,17 @@ export class TaskStore {
         id,
       );
     this.recordEvent(id, "updated", { fields }, now);
+    return this.mustGet(id);
+  }
+
+  setStatus(id: number, status: string): Task {
+    if (!isTaskStatus(status)) throw new InvalidStatusError(status);
+    const current = this.mustGet(id);
+    const now = new Date().toISOString();
+    this.db
+      .query("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?")
+      .run(status, now, id);
+    this.recordEvent(id, "status_changed", { from: current.status, to: status }, now);
     return this.mustGet(id);
   }
 

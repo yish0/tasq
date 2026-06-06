@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TaskNotFoundError, TaskStore, openDb } from "@tasq/core";
+import { InvalidStatusError, TaskNotFoundError, TaskStore, openDb } from "@tasq/core";
 
 function makeStore(): TaskStore {
   return new TaskStore(openDb(":memory:"));
@@ -135,5 +135,28 @@ describe("TaskStore.update", () => {
 
   test("throws TaskNotFoundError for missing id", () => {
     expect(() => makeStore().update(999, { title: "x" })).toThrow(TaskNotFoundError);
+  });
+});
+
+describe("TaskStore.setStatus", () => {
+  test("changes status and records a status_changed event", () => {
+    const store = makeStore();
+    const created = store.create({ title: "t" });
+    const updated = store.setStatus(created.id, "in_progress");
+    expect(updated.status).toBe("in_progress");
+    const events = store.events(created.id);
+    expect(events).toHaveLength(2);
+    expect(events[1]?.type).toBe("status_changed");
+    expect(events[1]?.payload).toEqual({ from: "todo", to: "in_progress" });
+  });
+
+  test("throws InvalidStatusError for invalid status", () => {
+    const store = makeStore();
+    const created = store.create({ title: "t" });
+    expect(() => store.setStatus(created.id, "doing")).toThrow(InvalidStatusError);
+  });
+
+  test("throws TaskNotFoundError for missing id", () => {
+    expect(() => makeStore().setStatus(999, "done")).toThrow(TaskNotFoundError);
   });
 });
