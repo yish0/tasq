@@ -191,21 +191,21 @@ import { join } from "node:path";
 import { ensureTasqHome, resolveTasqHome } from "@tasq/core";
 
 describe("resolveTasqHome", () => {
-  test("TASQ_HOME 환경변수가 root를 결정한다", () => {
+  test("TASQ_HOME env var determines root", () => {
     const home = resolveTasqHome({ TASQ_HOME: "/tmp/custom" });
     expect(home.root).toBe("/tmp/custom");
     expect(home.dbPath).toBe(join("/tmp/custom", "tasq.db"));
     expect(home.pluginsDir).toBe(join("/tmp/custom", "plugins"));
   });
 
-  test("기본값은 ~/.tasq", () => {
+  test("defaults to ~/.tasq", () => {
     const home = resolveTasqHome({});
     expect(home.root).toBe(join(homedir(), ".tasq"));
   });
 });
 
 describe("ensureTasqHome", () => {
-  test("디렉토리를 재귀 생성한다", () => {
+  test("creates directories recursively", () => {
     const tmp = mkdtempSync(join(tmpdir(), "tasq-home-"));
     const home = ensureTasqHome(resolveTasqHome({ TASQ_HOME: join(tmp, "nested", ".tasq") }));
     expect(existsSync(home.pluginsDir)).toBe(true);
@@ -283,7 +283,7 @@ import { describe, expect, test } from "bun:test";
 import { openDb } from "@tasq/core";
 
 describe("openDb", () => {
-  test("tasks/events 테이블을 생성한다", () => {
+  test("creates tasks and events tables", () => {
     const db = openDb(":memory:");
     const tables = db
       .query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -293,7 +293,7 @@ describe("openDb", () => {
     expect(names).toContain("events");
   });
 
-  test("user_version을 1로 설정한다", () => {
+  test("sets user_version to 1", () => {
     const db = openDb(":memory:");
     const row = db.query("PRAGMA user_version").get() as { user_version: number };
     expect(row.user_version).toBe(1);
@@ -385,11 +385,11 @@ import { describe, expect, test } from "bun:test";
 import { TASK_STATUSES, isTaskStatus } from "@tasq/core";
 
 describe("isTaskStatus", () => {
-  test("정의된 상태는 true", () => {
+  test("returns true for defined statuses", () => {
     for (const s of TASK_STATUSES) expect(isTaskStatus(s)).toBe(true);
   });
 
-  test("정의되지 않은 상태는 false", () => {
+  test("returns false for unknown statuses", () => {
     expect(isTaskStatus("doing")).toBe(false);
     expect(isTaskStatus("")).toBe(false);
   });
@@ -402,14 +402,14 @@ import { describe, expect, test } from "bun:test";
 import { InvalidStatusError, TaskNotFoundError } from "@tasq/core";
 
 describe("errors", () => {
-  test("TaskNotFoundError는 id를 보존한다", () => {
+  test("TaskNotFoundError preserves task id", () => {
     const err = new TaskNotFoundError(42);
     expect(err.taskId).toBe(42);
     expect(err.message).toBe("task not found: 42");
     expect(err.name).toBe("TaskNotFoundError");
   });
 
-  test("InvalidStatusError는 status를 보존한다", () => {
+  test("InvalidStatusError preserves status", () => {
     const err = new InvalidStatusError("doing");
     expect(err.status).toBe("doing");
     expect(err.message).toBe("invalid status: doing");
@@ -550,7 +550,7 @@ function makeStore(): TaskStore {
 }
 
 describe("TaskStore.create", () => {
-  test("기본값으로 태스크를 생성한다", () => {
+  test("creates a task with defaults", () => {
     const store = makeStore();
     const task = store.create({ title: "write spec" });
     expect(task.id).toBe(1);
@@ -565,7 +565,7 @@ describe("TaskStore.create", () => {
     expect(task.createdAt).toBe(task.updatedAt);
   });
 
-  test("입력값을 반영한다", () => {
+  test("applies input values", () => {
     const store = makeStore();
     const task = store.create({
       title: "t",
@@ -584,7 +584,7 @@ describe("TaskStore.create", () => {
     expect(task.externalRef).toBe("github:yish0/tasq#1");
   });
 
-  test("created 이벤트를 기록한다", () => {
+  test("records a created event", () => {
     const store = makeStore();
     const task = store.create({ title: "t" });
     const events = store.events(task.id);
@@ -595,11 +595,11 @@ describe("TaskStore.create", () => {
 });
 
 describe("TaskStore.get", () => {
-  test("없는 id는 null", () => {
+  test("returns null for missing id", () => {
     expect(makeStore().get(999)).toBeNull();
   });
 
-  test("생성한 태스크를 돌려준다", () => {
+  test("returns the created task", () => {
     const store = makeStore();
     const created = store.create({ title: "t" });
     expect(store.get(created.id)).toEqual(created);
@@ -607,7 +607,7 @@ describe("TaskStore.get", () => {
 });
 
 describe("TaskStore.events", () => {
-  test("이벤트가 없으면 빈 배열", () => {
+  test("returns empty array when no events", () => {
     expect(makeStore().events(1)).toEqual([]);
   });
 });
@@ -775,23 +775,23 @@ describe("TaskStore.list", () => {
     return store;
   }
 
-  test("필터 없이 priority 내림차순으로 전체 반환", () => {
+  test("returns all ordered by priority desc without filter", () => {
     const titles = seeded().list().map((t) => t.title);
     expect(titles).toEqual(["b", "c", "a"]);
   });
 
-  test("status 필터", () => {
+  test("filters by status", () => {
     const store = seeded();
     expect(store.list({ status: "todo" })).toHaveLength(3);
     expect(store.list({ status: "done" })).toHaveLength(0);
   });
 
-  test("project 필터", () => {
+  test("filters by project", () => {
     const titles = seeded().list({ project: "p1" }).map((t) => t.title);
     expect(titles).toEqual(["c", "a"]);
   });
 
-  test("tag 필터", () => {
+  test("filters by tag", () => {
     const titles = seeded().list({ tag: "y" }).map((t) => t.title);
     expect(titles).toEqual(["b"]);
   });
@@ -861,7 +861,7 @@ import { TaskNotFoundError, TaskStore, openDb } from "@tasq/core";
 테스트 추가:
 ```ts
 describe("TaskStore.update", () => {
-  test("패치 필드만 갱신하고 updated 이벤트를 기록한다", () => {
+  test("updates patched fields and records an updated event", () => {
     const store = makeStore();
     const created = store.create({ title: "old", priority: 1 });
     const updated = store.update(created.id, { title: "new", tags: ["t"] });
@@ -874,7 +874,7 @@ describe("TaskStore.update", () => {
     expect(events[1]?.payload).toEqual({ fields: ["title", "tags"] });
   });
 
-  test("null로 필드를 비울 수 있다", () => {
+  test("clears fields with null", () => {
     const store = makeStore();
     const created = store.create({ title: "t", project: "p", due: "2026-07-01" });
     const updated = store.update(created.id, { project: null, due: null });
@@ -882,7 +882,7 @@ describe("TaskStore.update", () => {
     expect(updated.due).toBeNull();
   });
 
-  test("빈 패치는 변경도 이벤트도 없다", () => {
+  test("empty patch changes nothing and records no event", () => {
     const store = makeStore();
     const created = store.create({ title: "t" });
     const result = store.update(created.id, {});
@@ -890,7 +890,7 @@ describe("TaskStore.update", () => {
     expect(store.events(created.id)).toHaveLength(1);
   });
 
-  test("없는 id는 TaskNotFoundError", () => {
+  test("throws TaskNotFoundError for missing id", () => {
     expect(() => makeStore().update(999, { title: "x" })).toThrow(TaskNotFoundError);
   });
 });
@@ -974,7 +974,7 @@ import { InvalidStatusError, TaskNotFoundError, TaskStore, openDb } from "@tasq/
 테스트 추가:
 ```ts
 describe("TaskStore.setStatus", () => {
-  test("상태를 바꾸고 status_changed 이벤트를 기록한다", () => {
+  test("changes status and records a status_changed event", () => {
     const store = makeStore();
     const created = store.create({ title: "t" });
     const updated = store.setStatus(created.id, "in_progress");
@@ -985,13 +985,13 @@ describe("TaskStore.setStatus", () => {
     expect(events[1]?.payload).toEqual({ from: "todo", to: "in_progress" });
   });
 
-  test("잘못된 상태는 InvalidStatusError", () => {
+  test("throws InvalidStatusError for invalid status", () => {
     const store = makeStore();
     const created = store.create({ title: "t" });
     expect(() => store.setStatus(created.id, "doing")).toThrow(InvalidStatusError);
   });
 
-  test("없는 id는 TaskNotFoundError", () => {
+  test("throws TaskNotFoundError for missing id", () => {
     expect(() => makeStore().setStatus(999, "done")).toThrow(TaskNotFoundError);
   });
 });
@@ -1048,7 +1048,7 @@ git commit -m "feat(core): TaskStore.setStatus with transition event"
 
 ```ts
 describe("TaskStore.remove", () => {
-  test("태스크를 지우고 deleted 이벤트는 남긴다", () => {
+  test("removes the task but keeps the deleted event", () => {
     const store = makeStore();
     const created = store.create({ title: "t" });
     store.remove(created.id);
@@ -1058,7 +1058,7 @@ describe("TaskStore.remove", () => {
     expect(events[1]?.type).toBe("deleted");
   });
 
-  test("없는 id는 TaskNotFoundError", () => {
+  test("throws TaskNotFoundError for missing id", () => {
     expect(() => makeStore().remove(999)).toThrow(TaskNotFoundError);
   });
 });
@@ -1171,14 +1171,14 @@ function makeRegistry(): CommandRegistry {
 }
 
 describe("runCli", () => {
-  test("커맨드를 디스패치한다", () => {
+  test("dispatches to a command", () => {
     const { ctx, out } = createTestCli();
     const code = runCli(["hello"], ctx, makeRegistry());
     expect(code).toBe(0);
     expect(out).toEqual(["hi"]);
   });
 
-  test("인자 없으면 help를 출력한다", () => {
+  test("prints help when no args", () => {
     const { ctx, out } = createTestCli();
     const code = runCli([], ctx, makeRegistry());
     expect(code).toBe(0);
@@ -1186,7 +1186,7 @@ describe("runCli", () => {
     expect(out.join("\n")).toContain("say hello");
   });
 
-  test("help / --help도 help를 출력한다", () => {
+  test("prints help for help and --help", () => {
     for (const arg of ["help", "--help"]) {
       const { ctx, out } = createTestCli();
       expect(runCli([arg], ctx, makeRegistry())).toBe(0);
@@ -1194,20 +1194,20 @@ describe("runCli", () => {
     }
   });
 
-  test("모르는 커맨드는 exit 1", () => {
+  test("exits 1 for unknown command", () => {
     const { ctx, err } = createTestCli();
     const code = runCli(["nope"], ctx, makeRegistry());
     expect(code).toBe(1);
     expect(err).toEqual(["unknown command: nope"]);
   });
 
-  test("Error를 던지면 메시지를 stderr로", () => {
+  test("writes Error message to stderr", () => {
     const { ctx, err } = createTestCli();
     expect(runCli(["boom-error"], ctx, makeRegistry())).toBe(1);
     expect(err).toEqual(["kaboom"]);
   });
 
-  test("Error가 아닌 throw도 처리한다", () => {
+  test("handles non-Error throws", () => {
     const { ctx, err } = createTestCli();
     expect(runCli(["boom-string"], ctx, makeRegistry())).toBe(1);
     expect(err).toEqual(["raw failure"]);
@@ -1316,11 +1316,11 @@ import { describe, expect, test } from "bun:test";
 import { parseId, parsePriority } from "../src/parse";
 
 describe("parseId", () => {
-  test("양의 정수 문자열을 숫자로", () => {
+  test("parses positive integer strings", () => {
     expect(parseId("42")).toBe(42);
   });
 
-  test("undefined/비정수/0 이하는 null", () => {
+  test("returns null for undefined, non-integer or non-positive", () => {
     expect(parseId(undefined)).toBeNull();
     expect(parseId("abc")).toBeNull();
     expect(parseId("1.5")).toBeNull();
@@ -1330,12 +1330,12 @@ describe("parseId", () => {
 });
 
 describe("parsePriority", () => {
-  test("유한 숫자 문자열을 숫자로", () => {
+  test("parses finite number strings", () => {
     expect(parsePriority("3")).toBe(3);
     expect(parsePriority("-1")).toBe(-1);
   });
 
-  test("숫자가 아니면 null", () => {
+  test("returns null for non-numeric input", () => {
     expect(parsePriority("high")).toBeNull();
   });
 });
@@ -1362,18 +1362,18 @@ const base: Task = {
 };
 
 describe("formatTaskLine", () => {
-  test("기본 한 줄 포맷", () => {
+  test("formats a basic single line", () => {
     expect(formatTaskLine(base)).toBe("◐ #7 P2 ship it");
   });
 
-  test("project와 tags를 포함한다", () => {
+  test("includes project and tags", () => {
     const task: Task = { ...base, status: "todo", project: "tasq", tags: ["a", "b"] };
     expect(formatTaskLine(task)).toBe("○ #7 P2 ship it (tasq) [a,b]");
   });
 });
 
 describe("formatTaskDetail", () => {
-  test("필드를 멀티라인으로 보여준다", () => {
+  test("shows fields as multiple lines", () => {
     const detail = formatTaskDetail(base);
     expect(detail).toContain("#7 ship it");
     expect(detail).toContain("status:   in_progress");
@@ -1381,7 +1381,7 @@ describe("formatTaskDetail", () => {
     expect(detail).toContain("project:  -");
   });
 
-  test("body가 있으면 끝에 붙인다", () => {
+  test("appends body at the end when present", () => {
     const detail = formatTaskDetail({ ...base, body: "long description" });
     expect(detail.endsWith("long description")).toBe(true);
   });
@@ -1473,7 +1473,7 @@ import { addCommand } from "../src/commands/add";
 import { createTestCli } from "./helpers";
 
 describe("add", () => {
-  test("타이틀로 태스크를 만든다 (positional은 공백으로 join)", () => {
+  test("creates a task from positionals joined with spaces", () => {
     const { ctx, out } = createTestCli();
     const code = addCommand.run(["write", "the", "spec"], ctx);
     expect(code).toBe(0);
@@ -1481,7 +1481,7 @@ describe("add", () => {
     expect(ctx.store.get(1)?.title).toBe("write the spec");
   });
 
-  test("옵션을 반영한다", () => {
+  test("applies options", () => {
     const { ctx } = createTestCli();
     addCommand.run(
       ["t", "--body", "detail", "--priority", "3", "--tag", "a", "--tag", "b", "--project", "tasq", "--due", "2026-07-01"],
@@ -1495,7 +1495,7 @@ describe("add", () => {
     expect(task?.due).toBe("2026-07-01");
   });
 
-  test("--json은 태스크 JSON을 출력한다", () => {
+  test("prints task JSON with --json", () => {
     const { ctx, out } = createTestCli();
     addCommand.run(["t", "--json"], ctx);
     const task = JSON.parse(out[0] ?? "");
@@ -1503,13 +1503,13 @@ describe("add", () => {
     expect(task.title).toBe("t");
   });
 
-  test("타이틀이 없으면 exit 1", () => {
+  test("exits 1 without title", () => {
     const { ctx, err } = createTestCli();
     expect(addCommand.run([], ctx)).toBe(1);
     expect(err[0]).toContain("usage:");
   });
 
-  test("priority가 숫자가 아니면 exit 1", () => {
+  test("exits 1 for non-numeric priority", () => {
     const { ctx, err } = createTestCli();
     expect(addCommand.run(["t", "--priority", "high"], ctx)).toBe(1);
     expect(err).toEqual(["invalid priority: high"]);
@@ -1614,32 +1614,32 @@ function seeded(): TestCli {
 }
 
 describe("list", () => {
-  test("태스크를 한 줄씩 출력한다", () => {
+  test("prints one line per task", () => {
     const { ctx, out } = seeded();
     expect(listCommand.run([], ctx)).toBe(0);
     expect(out).toEqual(["○ #2 P5 b (p2)", "○ #1 P1 a (p1) [x]"]);
   });
 
-  test("비어 있으면 no tasks", () => {
+  test("prints no tasks when empty", () => {
     const { ctx, out } = createTestCli();
     expect(listCommand.run([], ctx)).toBe(0);
     expect(out).toEqual(["no tasks"]);
   });
 
-  test("--json은 배열 JSON", () => {
+  test("prints JSON array with --json", () => {
     const { ctx, out } = seeded();
     listCommand.run(["--json"], ctx);
     const tasks = JSON.parse(out[0] ?? "");
     expect(tasks).toHaveLength(2);
   });
 
-  test("--status/--project/--tag 필터", () => {
+  test("filters by status/project/tag", () => {
     const { ctx, out } = seeded();
     listCommand.run(["--project", "p1", "--tag", "x", "--status", "todo"], ctx);
     expect(out).toEqual(["○ #1 P1 a (p1) [x]"]);
   });
 
-  test("잘못된 status는 exit 1", () => {
+  test("exits 1 for invalid status", () => {
     const { ctx, err } = seeded();
     expect(listCommand.run(["--status", "doing"], ctx)).toBe(1);
     expect(err).toEqual(["invalid status: doing"]);
@@ -1727,7 +1727,7 @@ import { showCommand } from "../src/commands/show";
 import { createTestCli } from "./helpers";
 
 describe("show", () => {
-  test("태스크 상세를 출력한다", () => {
+  test("prints task detail", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     expect(showCommand.run(["1"], ctx)).toBe(0);
@@ -1735,20 +1735,20 @@ describe("show", () => {
     expect(out[0]).toContain("status:   todo");
   });
 
-  test("--json은 태스크 JSON", () => {
+  test("prints task JSON with --json", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     showCommand.run(["1", "--json"], ctx);
     expect(JSON.parse(out[0] ?? "").title).toBe("t");
   });
 
-  test("잘못된 id는 usage와 exit 1", () => {
+  test("prints usage and exits 1 for invalid id", () => {
     const { ctx, err } = createTestCli();
     expect(showCommand.run(["abc"], ctx)).toBe(1);
     expect(err[0]).toContain("usage:");
   });
 
-  test("없는 태스크는 exit 1", () => {
+  test("exits 1 for missing task", () => {
     const { ctx, err } = createTestCli();
     expect(showCommand.run(["99"], ctx)).toBe(1);
     expect(err).toEqual(["task not found: 99"]);
@@ -1763,7 +1763,7 @@ import { eventsCommand } from "../src/commands/events";
 import { createTestCli } from "./helpers";
 
 describe("events", () => {
-  test("이벤트를 시간순으로 출력한다", () => {
+  test("prints events in chronological order", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     ctx.store.setStatus(1, "done");
@@ -1773,7 +1773,7 @@ describe("events", () => {
     expect(out[1]).toContain("status_changed");
   });
 
-  test("--json은 배열 JSON", () => {
+  test("prints JSON array with --json", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     eventsCommand.run(["1", "--json"], ctx);
@@ -1782,7 +1782,7 @@ describe("events", () => {
     expect(events[0].type).toBe("created");
   });
 
-  test("잘못된 id는 usage와 exit 1", () => {
+  test("prints usage and exits 1 for invalid id", () => {
     const { ctx, err } = createTestCli();
     expect(eventsCommand.run([], ctx)).toBe(1);
     expect(err[0]).toContain("usage:");
@@ -1897,7 +1897,7 @@ import { updateCommand } from "../src/commands/update";
 import { createTestCli } from "./helpers";
 
 describe("update", () => {
-  test("플래그로 받은 필드만 패치한다", () => {
+  test("patches only flagged fields", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "old", priority: 1, project: "keep" });
     const code = updateCommand.run(["1", "--title", "new", "--tag", "a", "--priority", "4"], ctx);
@@ -1910,7 +1910,7 @@ describe("update", () => {
     expect(task?.project).toBe("keep");
   });
 
-  test("body/project/due를 패치한다", () => {
+  test("patches body, project and due", () => {
     const { ctx } = createTestCli();
     ctx.store.create({ title: "t" });
     updateCommand.run(["1", "--body", "detail", "--project", "tasq", "--due", "2026-08-01"], ctx);
@@ -1920,34 +1920,34 @@ describe("update", () => {
     expect(task?.due).toBe("2026-08-01");
   });
 
-  test("--json은 갱신된 태스크 JSON", () => {
+  test("prints updated task JSON with --json", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "old" });
     updateCommand.run(["1", "--title", "new", "--json"], ctx);
     expect(JSON.parse(out[0] ?? "").title).toBe("new");
   });
 
-  test("플래그가 없으면 nothing to update", () => {
+  test("errors with nothing to update when no flags given", () => {
     const { ctx, err } = createTestCli();
     ctx.store.create({ title: "t" });
     expect(updateCommand.run(["1"], ctx)).toBe(1);
     expect(err).toEqual(["nothing to update"]);
   });
 
-  test("잘못된 id는 usage와 exit 1", () => {
+  test("prints usage and exits 1 for invalid id", () => {
     const { ctx, err } = createTestCli();
     expect(updateCommand.run([], ctx)).toBe(1);
     expect(err[0]).toContain("usage:");
   });
 
-  test("priority가 숫자가 아니면 exit 1", () => {
+  test("exits 1 for non-numeric priority", () => {
     const { ctx, err } = createTestCli();
     ctx.store.create({ title: "t" });
     expect(updateCommand.run(["1", "--priority", "high"], ctx)).toBe(1);
     expect(err).toEqual(["invalid priority: high"]);
   });
 
-  test("없는 태스크는 core 에러 메시지가 stderr로 (runCli 경유 시)", () => {
+  test("throws core error for missing task (handled by runCli)", () => {
     const { ctx } = createTestCli();
     expect(() => updateCommand.run(["99", "--title", "x"], ctx)).toThrow("task not found: 99");
   });
@@ -1961,7 +1961,7 @@ import { statusCommand } from "../src/commands/status";
 import { createTestCli } from "./helpers";
 
 describe("status", () => {
-  test("상태를 전이한다", () => {
+  test("transitions task status", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     const code = statusCommand.run(["1", "in_progress"], ctx);
@@ -1970,20 +1970,20 @@ describe("status", () => {
     expect(ctx.store.get(1)?.status).toBe("in_progress");
   });
 
-  test("--json은 갱신된 태스크 JSON", () => {
+  test("prints updated task JSON with --json", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     statusCommand.run(["1", "done", "--json"], ctx);
     expect(JSON.parse(out[0] ?? "").status).toBe("done");
   });
 
-  test("id나 status가 없으면 usage와 exit 1", () => {
+  test("prints usage and exits 1 when id or status is missing", () => {
     const { ctx, err } = createTestCli();
     expect(statusCommand.run(["1"], ctx)).toBe(1);
     expect(err[0]).toContain("usage:");
   });
 
-  test("잘못된 상태는 core 에러가 던져진다 (runCli가 처리)", () => {
+  test("throws core error for invalid status (handled by runCli)", () => {
     const { ctx } = createTestCli();
     ctx.store.create({ title: "t" });
     expect(() => statusCommand.run(["1", "doing"], ctx)).toThrow("invalid status: doing");
@@ -2116,7 +2116,7 @@ import { rmCommand } from "../src/commands/rm";
 import { createTestCli } from "./helpers";
 
 describe("rm", () => {
-  test("태스크를 삭제한다", () => {
+  test("deletes a task", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     expect(rmCommand.run(["1"], ctx)).toBe(0);
@@ -2124,13 +2124,13 @@ describe("rm", () => {
     expect(ctx.store.get(1)).toBeNull();
   });
 
-  test("잘못된 id는 usage와 exit 1", () => {
+  test("prints usage and exits 1 for invalid id", () => {
     const { ctx, err } = createTestCli();
     expect(rmCommand.run(["x"], ctx)).toBe(1);
     expect(err[0]).toContain("usage:");
   });
 
-  test("없는 태스크는 core 에러가 던져진다 (runCli가 처리)", () => {
+  test("throws core error for missing task (handled by runCli)", () => {
     const { ctx } = createTestCli();
     expect(() => rmCommand.run(["99"], ctx)).toThrow("task not found: 99");
   });
@@ -2143,7 +2143,7 @@ import { describe, expect, test } from "bun:test";
 import { buildRegistry } from "../src/commands/index";
 
 describe("buildRegistry", () => {
-  test("모든 커맨드를 등록한다", () => {
+  test("registers all commands", () => {
     const names = buildRegistry()
       .all()
       .map((c) => c.name)
@@ -2243,7 +2243,7 @@ import { join } from "node:path";
 import { createContext } from "../src/context";
 
 describe("createContext", () => {
-  test("TASQ_HOME을 부트스트랩하고 동작하는 store를 만든다", () => {
+  test("bootstraps TASQ_HOME and creates a working store", () => {
     const home = mkdtempSync(join(tmpdir(), "tasq-ctx-"));
     const ctx = createContext({ TASQ_HOME: home });
     const task = ctx.store.create({ title: "t" });
@@ -2262,7 +2262,7 @@ import { join } from "node:path";
 import { main } from "../src/index";
 
 describe("main", () => {
-  test("process.env.TASQ_HOME 기준으로 커맨드를 실행한다", () => {
+  test("runs commands against process.env.TASQ_HOME", () => {
     const home = mkdtempSync(join(tmpdir(), "tasq-main-"));
     const prev = process.env.TASQ_HOME;
     process.env.TASQ_HOME = home;
@@ -2284,7 +2284,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("e2e: add → list → status 한 사이클", () => {
+test("e2e: add → list → status round trip", () => {
   const home = mkdtempSync(join(tmpdir(), "tasq-e2e-"));
   const entry = join(import.meta.dir, "../src/index.ts");
   const env = { ...process.env, TASQ_HOME: home };
