@@ -160,3 +160,19 @@ describe("TaskStore.setStatus", () => {
     expect(() => makeStore().setStatus(999, "done")).toThrow(TaskNotFoundError);
   });
 });
+
+describe("TaskStore.remove", () => {
+  test("removes the task but keeps the deleted event", () => {
+    const store = makeStore();
+    const created = store.create({ title: "t" });
+    store.remove(created.id);
+    expect(store.get(created.id)).toBeNull();
+    const events = store.events(created.id);
+    expect(events).toHaveLength(2);
+    expect(events[1]?.type).toBe("deleted");
+  });
+
+  test("throws TaskNotFoundError for missing id", () => {
+    expect(() => makeStore().remove(999)).toThrow(TaskNotFoundError);
+  });
+});

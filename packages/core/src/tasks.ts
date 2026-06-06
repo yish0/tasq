@@ -163,6 +163,13 @@ export class TaskStore {
     return this.mustGet(id);
   }
 
+  remove(id: number): void {
+    this.mustGet(id);
+    const now = new Date().toISOString();
+    this.db.query("DELETE FROM tasks WHERE id = ?").run(id);
+    this.recordEvent(id, "deleted", {}, now);
+  }
+
   private mustGet(id: number): Task {
     const task = this.get(id);
     if (!task) throw new TaskNotFoundError(id);
