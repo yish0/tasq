@@ -87,6 +87,29 @@ export class TaskStore {
     return task;
   }
 
+  list(filter: TaskFilter = {}): Task[] {
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    if (filter.status) {
+      where.push("status = ?");
+      params.push(filter.status);
+    }
+    if (filter.project) {
+      where.push("project = ?");
+      params.push(filter.project);
+    }
+    const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+    const rows = this.db
+      .query(`SELECT * FROM tasks ${clause} ORDER BY priority DESC, id ASC`)
+      .all(...params) as TaskRow[];
+    let tasks = rows.map(rowToTask);
+    if (filter.tag !== undefined) {
+      const tag = filter.tag;
+      tasks = tasks.filter((t) => t.tags.includes(tag));
+    }
+    return tasks;
+  }
+
   get(id: number): Task | null {
     const row = this.db.query("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | null;
     return row ? rowToTask(row) : null;

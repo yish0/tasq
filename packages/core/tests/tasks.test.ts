@@ -70,3 +70,34 @@ describe("TaskStore.events", () => {
     expect(makeStore().events(1)).toEqual([]);
   });
 });
+
+describe("TaskStore.list", () => {
+  function seeded(): TaskStore {
+    const store = makeStore();
+    store.create({ title: "a", priority: 1, tags: ["x"], project: "p1" });
+    store.create({ title: "b", priority: 5, tags: ["x", "y"], project: "p2" });
+    store.create({ title: "c", priority: 3, project: "p1" });
+    return store;
+  }
+
+  test("returns all ordered by priority desc without filter", () => {
+    const titles = seeded().list().map((t) => t.title);
+    expect(titles).toEqual(["b", "c", "a"]);
+  });
+
+  test("filters by status", () => {
+    const store = seeded();
+    expect(store.list({ status: "todo" })).toHaveLength(3);
+    expect(store.list({ status: "done" })).toHaveLength(0);
+  });
+
+  test("filters by project", () => {
+    const titles = seeded().list({ project: "p1" }).map((t) => t.title);
+    expect(titles).toEqual(["c", "a"]);
+  });
+
+  test("filters by tag", () => {
+    const titles = seeded().list({ tag: "y" }).map((t) => t.title);
+    expect(titles).toEqual(["b"]);
+  });
+});
