@@ -1,0 +1,8 @@
+{
+  "name": "tasq",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": { "tasq": "./src/index.ts" },
+  "dependencies": { "@tasq/core": "workspace:*" }
+}
