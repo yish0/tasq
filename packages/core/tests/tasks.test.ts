@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TaskStore, openDb } from "@tasq/core";
+import { TaskNotFoundError, TaskStore, openDb } from "@tasq/core";
 
 function makeStore(): TaskStore {
   return new TaskStore(openDb(":memory:"));
@@ -99,5 +99,41 @@ describe("TaskStore.list", () => {
   test("filters by tag", () => {
     const titles = seeded().list({ tag: "y" }).map((t) => t.title);
     expect(titles).toEqual(["b"]);
+  });
+});
+
+describe("TaskStore.update", () => {
+  test("updates patched fields and records an updated event", () => {
+    const store = makeStore();
+    const created = store.create({ title: "old", priority: 1 });
+    const updated = store.update(created.id, { title: "new", tags: ["t"] });
+    expect(updated.title).toBe("new");
+    expect(updated.tags).toEqual(["t"]);
+    expect(updated.priority).toBe(1);
+    const events = store.events(created.id);
+    expect(events).toHaveLength(2);
+    expect(events[1]?.type).toBe("updated");
+    expect(events[1]?.payload).toEqual({ fields: ["title", "tags"] });
+  });
+
+  test("clears fields with null", () => {
+    const store = makeStore();
+    const created = store.create({ title: "t", project: "p", start: "2026-06-20", due: "2026-07-01" });
+    const updated = store.update(created.id, { project: null, start: null, due: null });
+    expect(updated.project).toBeNull();
+    expect(updated.start).toBeNull();
+    expect(updated.due).toBeNull();
+  });
+
+  test("empty patch changes nothing and records no event", () => {
+    const store = makeStore();
+    const created = store.create({ title: "t" });
+    const result = store.update(created.id, {});
+    expect(result).toEqual(created);
+    expect(store.events(created.id)).toHaveLength(1);
+  });
+
+  test("throws TaskNotFoundError for missing id", () => {
+    expect(() => makeStore().update(999, { title: "x" })).toThrow(TaskNotFoundError);
   });
 });

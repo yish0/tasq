@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { TaskNotFoundError } from "./errors";
 import type {
   CreateTaskInput,
   Task,
@@ -120,6 +121,40 @@ export class TaskStore {
       .query("SELECT * FROM events WHERE task_id = ? ORDER BY id ASC")
       .all(taskId) as EventRow[];
     return rows.map(rowToEvent);
+  }
+
+  update(id: number, patch: UpdateTaskPatch): Task {
+    const current = this.mustGet(id);
+    const fields = Object.keys(patch);
+    if (fields.length === 0) return current;
+    const next = { ...current, ...patch };
+    const now = new Date().toISOString();
+    this.db
+      .query(
+        `UPDATE tasks
+         SET title = ?, body = ?, priority = ?, tags = ?, project = ?, start = ?, due = ?, external_ref = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        next.title,
+        next.body,
+        next.priority,
+        JSON.stringify(next.tags),
+        next.project,
+        next.start,
+        next.due,
+        next.externalRef,
+        now,
+        id,
+      );
+    this.recordEvent(id, "updated", { fields }, now);
+    return this.mustGet(id);
+  }
+
+  private mustGet(id: number): Task {
+    const task = this.get(id);
+    if (!task) throw new TaskNotFoundError(id);
+    return task;
   }
 
   private recordEvent(
