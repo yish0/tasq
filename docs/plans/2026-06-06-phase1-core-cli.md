@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority INTEGER NOT NULL DEFAULT 0,
   tags TEXT NOT NULL DEFAULT '[]',
   project TEXT,
+  start TEXT,
   due TEXT,
   external_ref TEXT,
   created_at TEXT NOT NULL,
@@ -450,6 +451,7 @@ export interface Task {
   readonly priority: number;
   readonly tags: readonly string[];
   readonly project: string | null;
+  readonly start: string | null;
   readonly due: string | null;
   readonly externalRef: string | null;
   readonly createdAt: string;
@@ -462,6 +464,7 @@ export interface CreateTaskInput {
   priority?: number;
   tags?: string[];
   project?: string;
+  start?: string;
   due?: string;
   externalRef?: string;
 }
@@ -472,6 +475,7 @@ export interface UpdateTaskPatch {
   priority?: number;
   tags?: string[];
   project?: string | null;
+  start?: string | null;
   due?: string | null;
   externalRef?: string | null;
 }
@@ -561,6 +565,7 @@ describe("TaskStore.create", () => {
     expect(task.tags).toEqual([]);
     expect(task.body).toBe("");
     expect(task.project).toBeNull();
+    expect(task.start).toBeNull();
     expect(task.due).toBeNull();
     expect(task.externalRef).toBeNull();
     expect(task.createdAt).toBe(task.updatedAt);
@@ -574,6 +579,7 @@ describe("TaskStore.create", () => {
       priority: 3,
       tags: ["a", "b"],
       project: "tasq",
+      start: "2026-06-20",
       due: "2026-07-01",
       externalRef: "github:yish0/tasq#1",
     });
@@ -581,6 +587,7 @@ describe("TaskStore.create", () => {
     expect(task.priority).toBe(3);
     expect(task.tags).toEqual(["a", "b"]);
     expect(task.project).toBe("tasq");
+    expect(task.start).toBe("2026-06-20");
     expect(task.due).toBe("2026-07-01");
     expect(task.externalRef).toBe("github:yish0/tasq#1");
   });
@@ -642,6 +649,7 @@ interface TaskRow {
   priority: number;
   tags: string;
   project: string | null;
+  start: string | null;
   due: string | null;
   external_ref: string | null;
   created_at: string;
@@ -665,6 +673,7 @@ function rowToTask(row: TaskRow): Task {
     priority: row.priority,
     tags: JSON.parse(row.tags) as string[],
     project: row.project,
+    start: row.start,
     due: row.due,
     externalRef: row.external_ref,
     createdAt: row.created_at,
@@ -689,8 +698,8 @@ export class TaskStore {
     const now = new Date().toISOString();
     const row = this.db
       .query(
-        `INSERT INTO tasks (title, body, priority, tags, project, due, external_ref, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (title, body, priority, tags, project, start, due, external_ref, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          RETURNING *`,
       )
       .get(
@@ -699,6 +708,7 @@ export class TaskStore {
         input.priority ?? 0,
         JSON.stringify(input.tags ?? []),
         input.project ?? null,
+        input.start ?? null,
         input.due ?? null,
         input.externalRef ?? null,
         now,
@@ -877,9 +887,10 @@ describe("TaskStore.update", () => {
 
   test("clears fields with null", () => {
     const store = makeStore();
-    const created = store.create({ title: "t", project: "p", due: "2026-07-01" });
-    const updated = store.update(created.id, { project: null, due: null });
+    const created = store.create({ title: "t", project: "p", start: "2026-06-20", due: "2026-07-01" });
+    const updated = store.update(created.id, { project: null, start: null, due: null });
     expect(updated.project).toBeNull();
+    expect(updated.start).toBeNull();
     expect(updated.due).toBeNull();
   });
 
@@ -920,7 +931,7 @@ import { TaskNotFoundError } from "./errors";
     this.db
       .query(
         `UPDATE tasks
-         SET title = ?, body = ?, priority = ?, tags = ?, project = ?, due = ?, external_ref = ?, updated_at = ?
+         SET title = ?, body = ?, priority = ?, tags = ?, project = ?, start = ?, due = ?, external_ref = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -929,6 +940,7 @@ import { TaskNotFoundError } from "./errors";
         next.priority,
         JSON.stringify(next.tags),
         next.project,
+        next.start,
         next.due,
         next.externalRef,
         now,
@@ -1394,6 +1406,7 @@ const base: Task = {
   priority: 2,
   tags: [],
   project: null,
+  start: null,
   due: null,
   externalRef: null,
   createdAt: "2026-06-06T00:00:00.000Z",
@@ -1511,6 +1524,7 @@ export function formatTaskDetail(task: Task): string {
     `priority: ${task.priority}`,
     `tags:     ${task.tags.join(", ") || "-"}`,
     `project:  ${task.project ?? "-"}`,
+    `start:    ${task.start ?? "-"}`,
     `due:      ${task.due ?? "-"}`,
     `external: ${task.externalRef ?? "-"}`,
     `created:  ${task.createdAt}`,
@@ -1561,7 +1575,7 @@ describe("add", () => {
   test("applies options", () => {
     const { ctx } = createTestCli();
     addCommand.run(
-      ["t", "--body", "detail", "--priority", "3", "--tag", "a", "--tag", "b", "--project", "tasq", "--due", "2026-07-01"],
+      ["t", "--body", "detail", "--priority", "3", "--tag", "a", "--tag", "b", "--project", "tasq", "--start", "2026-06-10", "--due", "2026-07-01"],
       ctx,
     );
     const task = ctx.store.get(1);
@@ -1569,6 +1583,7 @@ describe("add", () => {
     expect(task?.priority).toBe(3);
     expect(task?.tags).toEqual(["a", "b"]);
     expect(task?.project).toBe("tasq");
+    expect(task?.start).toBe("2026-06-10");
     expect(task?.due).toBe("2026-07-01");
   });
 
@@ -1629,7 +1644,7 @@ import { parsePriority, parseTokens } from "../parse";
 import type { Command } from "../registry";
 
 const USAGE =
-  "tasq add <title> [^N] [:project] [+tag]... [--body <text>] [--priority <n>] [--tag <tag>]... [--project <name>] [--due <date>] [--json]";
+  "tasq add <title> [^N] [:project] [+tag]... [--body <text>] [--priority <n>] [--tag <tag>]... [--project <name>] [--start <date>] [--due <date>] [--json]";
 
 export const addCommand: Command = {
   name: "add",
@@ -1643,6 +1658,7 @@ export const addCommand: Command = {
         priority: { type: "string" },
         tag: { type: "string", multiple: true },
         project: { type: "string" },
+        start: { type: "string" },
         due: { type: "string" },
         json: { type: "boolean" },
       },
@@ -1671,6 +1687,7 @@ export const addCommand: Command = {
       priority,
       tags,
       project: values.project ?? tokens.project,
+      start: values.start,
       due: values.due,
     });
     ctx.stdout(values.json ? JSON.stringify(task) : `created #${task.id}: ${task.title}`);
@@ -2011,13 +2028,14 @@ describe("update", () => {
     expect(task?.project).toBe("keep");
   });
 
-  test("patches body, project and due", () => {
+  test("patches body, project, start and due", () => {
     const { ctx } = createTestCli();
     ctx.store.create({ title: "t" });
-    updateCommand.run(["1", "--body", "detail", "--project", "tasq", "--due", "2026-08-01"], ctx);
+    updateCommand.run(["1", "--body", "detail", "--project", "tasq", "--start", "2026-07-15", "--due", "2026-08-01"], ctx);
     const task = ctx.store.get(1);
     expect(task?.body).toBe("detail");
     expect(task?.project).toBe("tasq");
+    expect(task?.start).toBe("2026-07-15");
     expect(task?.due).toBe("2026-08-01");
   });
 
@@ -2107,7 +2125,7 @@ import { parseId, parsePriority } from "../parse";
 import type { Command } from "../registry";
 
 const USAGE =
-  "tasq update <id> [--title <t>] [--body <b>] [--priority <n>] [--tag <tag>]... [--project <p>] [--due <d>] [--json]";
+  "tasq update <id> [--title <t>] [--body <b>] [--priority <n>] [--tag <tag>]... [--project <p>] [--start <d>] [--due <d>] [--json]";
 
 export const updateCommand: Command = {
   name: "update",
@@ -2122,6 +2140,7 @@ export const updateCommand: Command = {
         priority: { type: "string" },
         tag: { type: "string", multiple: true },
         project: { type: "string" },
+        start: { type: "string" },
         due: { type: "string" },
         json: { type: "boolean" },
       },
@@ -2145,6 +2164,7 @@ export const updateCommand: Command = {
     }
     if (values.tag !== undefined) patch.tags = values.tag;
     if (values.project !== undefined) patch.project = values.project;
+    if (values.start !== undefined) patch.start = values.start;
     if (values.due !== undefined) patch.due = values.due;
     if (Object.keys(patch).length === 0) {
       ctx.stderr("nothing to update");

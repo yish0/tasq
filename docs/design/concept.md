@@ -107,7 +107,7 @@ SQLite 단일 source of truth. 주요 테이블:
 
 | 테이블 | 내용 |
 |---|---|
-| `tasks` | id, title, body(markdown), status, priority, tags, project, due, external_ref, timestamps |
+| `tasks` | id, title, body(markdown), status, priority, tags, project, start(계획 시작), due, external_ref, timestamps |
 | `events` | append-only 이벤트 로그 — task_id, type, payload(JSON), ts. 상태 전이·블록·세션 기록 전부 |
 | `agent_sessions` | task_id, adapter, mux 세션명, status(running/waiting_input/done/failed), 결과 요약, timestamps |
 | `plugin_kv` | 플러그인별 네임스페이스 key-value 저장소 |
