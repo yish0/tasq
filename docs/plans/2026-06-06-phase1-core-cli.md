@@ -48,7 +48,7 @@ tasq/
 │       │   ├── app.ts                   # runCli 디스패치 + help
 │       │   ├── registry.ts              # Command/CliContext/CommandRegistry
 │       │   ├── context.ts               # 실환경 CliContext 생성
-│       │   ├── parse.ts                 # parseId/parsePriority
+│       │   ├── parse.ts                 # parseId/parsePriority/parseTokens
 │       │   ├── output.ts                # 사람용 포맷터
 │       │   └── commands/
 │       │       ├── index.ts             # buildRegistry
@@ -441,18 +441,19 @@ export function isTaskStatus(value: string): value is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(value);
 }
 
+// 불변 데이터 — 변이는 TaskStore의 단일 경로로만. store 밖 변이는 컴파일 타임에 차단한다.
 export interface Task {
-  id: number;
-  title: string;
-  body: string;
-  status: TaskStatus;
-  priority: number;
-  tags: string[];
-  project: string | null;
-  due: string | null;
-  externalRef: string | null;
-  createdAt: string;
-  updatedAt: string;
+  readonly id: number;
+  readonly title: string;
+  readonly body: string;
+  readonly status: TaskStatus;
+  readonly priority: number;
+  readonly tags: readonly string[];
+  readonly project: string | null;
+  readonly due: string | null;
+  readonly externalRef: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 export interface CreateTaskInput {
@@ -484,11 +485,11 @@ export interface TaskFilter {
 export type TaskEventType = "created" | "updated" | "status_changed" | "deleted";
 
 export interface TaskEvent {
-  id: number;
-  taskId: number;
-  type: TaskEventType;
-  payload: Record<string, unknown>;
-  createdAt: string;
+  readonly id: number;
+  readonly taskId: number;
+  readonly type: TaskEventType;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly createdAt: string;
 }
 ```
 
@@ -1313,7 +1314,7 @@ git commit -m "feat(cli): command registry and dispatch with error handling"
 `packages/cli/tests/parse.test.ts`:
 ```ts
 import { describe, expect, test } from "bun:test";
-import { parseId, parsePriority } from "../src/parse";
+import { parseId, parsePriority, parseTokens } from "../src/parse";
 
 describe("parseId", () => {
   test("parses positive integer strings", () => {
@@ -1337,6 +1338,44 @@ describe("parsePriority", () => {
 
   test("returns null for non-numeric input", () => {
     expect(parsePriority("high")).toBeNull();
+  });
+});
+
+describe("parseTokens", () => {
+  test("extracts +tag, :project and ^priority tokens", () => {
+    expect(parseTokens(["fix", "bug", "+a", "+b", ":web", "^2"])).toEqual({
+      words: ["fix", "bug"],
+      tags: ["a", "b"],
+      project: "web",
+      priority: 2,
+    });
+  });
+
+  test("treats bare sigils and args with whitespace as words", () => {
+    expect(parseTokens(["+", ":", "^", "+1 button"])).toEqual({
+      words: ["+", ":", "^", "+1 button"],
+      tags: [],
+      project: undefined,
+      priority: undefined,
+    });
+  });
+
+  test("keeps non-numeric ^ tokens as words", () => {
+    expect(parseTokens(["bump", "^head"])).toEqual({
+      words: ["bump", "^head"],
+      tags: [],
+      project: undefined,
+      priority: undefined,
+    });
+  });
+
+  test("last :project and ^priority win", () => {
+    expect(parseTokens([":a", ":b", "^1", "^2"])).toEqual({
+      words: [],
+      tags: [],
+      project: "b",
+      priority: 2,
+    });
   });
 });
 ```
@@ -1407,6 +1446,44 @@ export function parsePriority(raw: string): number | null {
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
+
+export interface ParsedTokens {
+  words: string[];
+  tags: string[];
+  project: string | undefined;
+  priority: number | undefined;
+}
+
+// taskwarrior식 토큰: +tag / :project / ^priority
+// 공백 없는 단독 인자만 토큰으로 인식한다 — 쿼트로 묶인 타이틀("fix +bar thing")은
+// 공백을 포함하므로 그대로 단어가 된다. ^뒤가 숫자가 아니면 일반 단어로 취급.
+export function parseTokens(args: string[]): ParsedTokens {
+  const words: string[] = [];
+  const tags: string[] = [];
+  let project: string | undefined;
+  let priority: number | undefined;
+  for (const arg of args) {
+    if (arg.length > 1 && !/\s/.test(arg)) {
+      if (arg.startsWith("+")) {
+        tags.push(arg.slice(1));
+        continue;
+      }
+      if (arg.startsWith(":")) {
+        project = arg.slice(1);
+        continue;
+      }
+      if (arg.startsWith("^")) {
+        const parsed = parsePriority(arg.slice(1));
+        if (parsed !== null) {
+          priority = parsed;
+          continue;
+        }
+      }
+    }
+    words.push(arg);
+  }
+  return { words, tags, project, priority };
+}
 ```
 
 `packages/cli/src/output.ts`:
@@ -1453,7 +1530,7 @@ Expected: PASS, 커버리지 100%.
 
 ```bash
 git add packages/cli
-git commit -m "feat(cli): id/priority parsing and task formatters"
+git commit -m "feat(cli): id/priority/token parsing and task formatters"
 ```
 
 ---
@@ -1495,6 +1572,25 @@ describe("add", () => {
     expect(task?.due).toBe("2026-07-01");
   });
 
+  test("parses taskwarrior-style tokens", () => {
+    const { ctx } = createTestCli();
+    addCommand.run(["fix", "login", "bug", "^3", ":backend", "+bug", "+urgent"], ctx);
+    const task = ctx.store.get(1);
+    expect(task?.title).toBe("fix login bug");
+    expect(task?.priority).toBe(3);
+    expect(task?.project).toBe("backend");
+    expect(task?.tags).toEqual(["bug", "urgent"]);
+  });
+
+  test("flags win over tokens for the same field", () => {
+    const { ctx } = createTestCli();
+    addCommand.run(["t", "^1", ":a", "+x", "--priority", "5", "--project", "b", "--tag", "y"], ctx);
+    const task = ctx.store.get(1);
+    expect(task?.priority).toBe(5);
+    expect(task?.project).toBe("b");
+    expect(task?.tags).toEqual(["y"]);
+  });
+
   test("prints task JSON with --json", () => {
     const { ctx, out } = createTestCli();
     addCommand.run(["t", "--json"], ctx);
@@ -1524,14 +1620,16 @@ Expected: FAIL — 모듈 없음.
 
 - [ ] **Step 3: 구현**
 
+참고: zsh에서 `extendedglob`이 켜져 있으면 `^` 토큰은 쿼트가 필요할 수 있다 (`'^3'`). `+`/`:` 토큰은 셸 안전.
+
 `packages/cli/src/commands/add.ts`:
 ```ts
 import { parseArgs } from "node:util";
-import { parsePriority } from "../parse";
+import { parsePriority, parseTokens } from "../parse";
 import type { Command } from "../registry";
 
 const USAGE =
-  "tasq add <title> [--body <text>] [--priority <n>] [--tag <tag>]... [--project <name>] [--due <date>] [--json]";
+  "tasq add <title> [^N] [:project] [+tag]... [--body <text>] [--priority <n>] [--tag <tag>]... [--project <name>] [--due <date>] [--json]";
 
 export const addCommand: Command = {
   name: "add",
@@ -1550,12 +1648,14 @@ export const addCommand: Command = {
       },
       allowPositionals: true,
     });
-    const title = positionals.join(" ").trim();
+    const tokens = parseTokens(positionals);
+    const title = tokens.words.join(" ").trim();
     if (!title) {
       ctx.stderr(`usage: ${USAGE}`);
       return 1;
     }
-    let priority: number | undefined;
+    // 같은 필드를 flag와 토큰 둘 다 주면 명시적인 flag가 이긴다
+    let priority = tokens.priority;
     if (values.priority !== undefined) {
       const parsed = parsePriority(values.priority);
       if (parsed === null) {
@@ -1564,12 +1664,13 @@ export const addCommand: Command = {
       }
       priority = parsed;
     }
+    const tags = values.tag ?? (tokens.tags.length > 0 ? tokens.tags : undefined);
     const task = ctx.store.create({
       title,
       body: values.body,
       priority,
-      tags: values.tag,
-      project: values.project,
+      tags,
+      project: values.project ?? tokens.project,
       due: values.due,
     });
     ctx.stdout(values.json ? JSON.stringify(task) : `created #${task.id}: ${task.title}`);
@@ -1587,7 +1688,7 @@ Expected: PASS, 커버리지 100%.
 
 ```bash
 git add packages/cli
-git commit -m "feat(cli): add command"
+git commit -m "feat(cli): add command with taskwarrior-style tokens"
 ```
 
 ---
@@ -2408,6 +2509,7 @@ git commit -m "ci: typecheck and 100% coverage gate on push/PR"
 export TASQ_HOME=$(mktemp -d)
 alias tq='bun run packages/cli/src/index.ts'
 tq add "phase 1 done check" --priority 2 --tag verify
+tq add token style check '^3' :phase1 +tokens
 tq list --json
 tq show 1 --json
 tq update 1 --body "verified"
