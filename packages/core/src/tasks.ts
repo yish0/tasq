@@ -340,11 +340,6 @@ export class TaskStore {
     }
   }
 
-  // Task 14에서 rm 커맨드 개편과 함께 제거 예정
-  remove(id: number): void {
-    this.hardDelete(id);
-  }
-
   // 자식이 있으면 recursive 없이는 HasSubtasksError. 깊은 자식부터 반환한다
   private collectSubtree(id: number, recursive: boolean, includeArchived: boolean): Task[] {
     const root = this.mustGet(id);
