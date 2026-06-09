@@ -1,9 +1,12 @@
 import type { Database } from "bun:sqlite";
 import {
   DependencyCycleError,
+  HasSubtasksError,
   IncompleteSubtaskError,
   InvalidStatusError,
   InvalidTransitionError,
+  NotArchivedError,
+  ParentArchivedError,
   ParentCycleError,
   TaskNotFoundError,
 } from "./errors";
@@ -266,11 +269,60 @@ export class TaskStore {
     return this.db.transaction(fn)() as T;
   }
 
-  remove(id: number): void {
-    this.mustGet(id);
+  archive(id: number, options: { recursive?: boolean } = {}): void {
+    const targets = this.collectSubtree(id, options.recursive === true, false);
     const now = new Date().toISOString();
-    this.db.query("DELETE FROM tasks WHERE id = ?").run(id);
-    this.recordEvent(id, "deleted", {}, now);
+    for (const t of targets) {
+      if (t.archivedAt !== null) continue;
+      this.db
+        .query("UPDATE tasks SET archived_at = ?, updated_at = ? WHERE id = ?")
+        .run(now, now, t.id);
+      this.recordEvent(t.id, "archived", {}, now);
+    }
+  }
+
+  restore(id: number): Task {
+    const task = this.mustGet(id);
+    if (task.archivedAt === null) throw new NotArchivedError(id);
+    if (task.parentId !== null && this.mustGet(task.parentId).archivedAt !== null) {
+      throw new ParentArchivedError(id, task.parentId);
+    }
+    const now = new Date().toISOString();
+    this.db
+      .query("UPDATE tasks SET archived_at = NULL, updated_at = ? WHERE id = ?")
+      .run(now, id);
+    this.recordEvent(id, "restored", {}, now);
+    return this.mustGet(id);
+  }
+
+  hardDelete(id: number, options: { recursive?: boolean } = {}): void {
+    // hard delete는 보관된 자식도 자식으로 취급한다 — 행이 남아 고아가 되는 것을 방지
+    const targets = this.collectSubtree(id, options.recursive === true, true);
+    const now = new Date().toISOString();
+    for (const t of targets) {
+      this.db.query("DELETE FROM task_deps WHERE task_id = ? OR depends_on_id = ?").run(t.id, t.id);
+      this.db.query("DELETE FROM tasks WHERE id = ?").run(t.id);
+      this.recordEvent(t.id, "deleted", {}, now);
+    }
+  }
+
+  // Task 14에서 rm 커맨드 개편과 함께 제거 예정
+  remove(id: number): void {
+    this.hardDelete(id);
+  }
+
+  // 자식이 있으면 recursive 없이는 HasSubtasksError. 깊은 자식부터 반환한다
+  private collectSubtree(id: number, recursive: boolean, includeArchived: boolean): Task[] {
+    const root = this.mustGet(id);
+    let kids = this.children(id);
+    if (!includeArchived) kids = kids.filter((c) => c.archivedAt === null);
+    if (kids.length === 0) return [root];
+    if (!recursive) throw new HasSubtasksError(id);
+    const result = [root];
+    for (const child of kids) {
+      result.push(...this.collectSubtree(child.id, true, includeArchived));
+    }
+    return result;
   }
 
   // deps 그래프에서 from → to 도달 가능 여부 (DFS)

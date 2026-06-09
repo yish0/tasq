@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   DependencyCycleError,
+  HasSubtasksError,
   IncompleteSubtaskError,
   InvalidStatusError,
   InvalidTransitionError,
+  NotArchivedError,
+  ParentArchivedError,
   ParentCycleError,
   TaskNotFoundError,
   TaskStore,
@@ -177,19 +180,104 @@ describe("TaskStore.setStatus", () => {
   });
 });
 
-describe("TaskStore.remove", () => {
-  test("removes the task but keeps the deleted event", () => {
+describe("TaskStore.archive", () => {
+  test("sets archivedAt and records an event", () => {
     const store = makeStore();
-    const created = store.create({ title: "t" });
-    store.remove(created.id);
-    expect(store.get(created.id)).toBeNull();
-    const events = store.events(created.id);
-    expect(events).toHaveLength(2);
-    expect(events[1]?.type).toBe("deleted");
+    const t = store.create({ title: "t" });
+    store.archive(t.id);
+    expect(store.get(t.id)?.archivedAt).not.toBeNull();
+    expect(store.events(t.id).at(-1)?.type).toBe("archived");
   });
 
-  test("throws TaskNotFoundError for missing id", () => {
-    expect(() => makeStore().remove(999)).toThrow(TaskNotFoundError);
+  test("archiving an already archived task is a no-op", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    store.archive(t.id);
+    const count = store.events(t.id).length;
+    store.archive(t.id);
+    expect(store.events(t.id)).toHaveLength(count);
+  });
+
+  test("blocks when live subtasks exist, archives subtree with recursive", () => {
+    const store = makeStore();
+    const p = store.create({ title: "p" });
+    const c = store.create({ title: "c", parentId: p.id });
+    const gc = store.create({ title: "gc", parentId: c.id });
+    expect(() => store.archive(p.id)).toThrow(HasSubtasksError);
+    store.archive(p.id, { recursive: true });
+    for (const id of [p.id, c.id, gc.id]) {
+      expect(store.get(id)?.archivedAt).not.toBeNull();
+      expect(store.events(id).at(-1)?.type).toBe("archived");
+    }
+  });
+
+  test("archived-only children do not require recursive", () => {
+    const store = makeStore();
+    const p = store.create({ title: "p" });
+    const c = store.create({ title: "c", parentId: p.id });
+    store.archive(c.id);
+    store.archive(p.id);
+    expect(store.get(p.id)?.archivedAt).not.toBeNull();
+  });
+
+  test("archived prerequisites no longer block", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    const dep = store.create({ title: "dep" });
+    store.addDep(t.id, dep.id);
+    expect(store.blockedTaskIds().has(t.id)).toBe(true);
+    store.archive(dep.id);
+    expect(store.blockedTaskIds().has(t.id)).toBe(false);
+  });
+});
+
+describe("TaskStore.restore", () => {
+  test("clears archivedAt and records an event", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    store.archive(t.id);
+    expect(store.restore(t.id).archivedAt).toBeNull();
+    expect(store.events(t.id).at(-1)?.type).toBe("restored");
+  });
+
+  test("rejects restoring a non-archived task", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    expect(() => store.restore(t.id)).toThrow(NotArchivedError);
+  });
+
+  test("rejects restoring a child under an archived parent", () => {
+    const store = makeStore();
+    const p = store.create({ title: "p" });
+    const c = store.create({ title: "c", parentId: p.id });
+    store.archive(p.id, { recursive: true });
+    expect(() => store.restore(c.id)).toThrow(ParentArchivedError);
+    store.restore(p.id);
+    expect(store.restore(c.id).archivedAt).toBeNull();
+  });
+});
+
+describe("TaskStore.hardDelete", () => {
+  test("deletes the row, its deps and keeps a deleted event", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    const other = store.create({ title: "other" });
+    store.addDep(other.id, t.id);
+    store.hardDelete(t.id);
+    expect(store.get(t.id)).toBeNull();
+    expect(store.depsOf(other.id)).toEqual([]);
+    expect(store.events(t.id).at(-1)?.type).toBe("deleted");
+  });
+
+  test("requires recursive even when children are archived", () => {
+    const store = makeStore();
+    const p = store.create({ title: "p" });
+    const c = store.create({ title: "c", parentId: p.id });
+    store.archive(c.id);
+    expect(() => store.hardDelete(p.id)).toThrow(HasSubtasksError);
+    store.hardDelete(p.id, { recursive: true });
+    expect(store.get(p.id)).toBeNull();
+    expect(store.get(c.id)).toBeNull();
   });
 });
 
