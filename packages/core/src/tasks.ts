@@ -1,7 +1,9 @@
 import type { Database } from "bun:sqlite";
 import {
   DependencyCycleError,
+  IncompleteSubtaskError,
   InvalidStatusError,
+  InvalidTransitionError,
   ParentCycleError,
   TaskNotFoundError,
 } from "./errors";
@@ -237,12 +239,31 @@ export class TaskStore {
   setStatus(id: number, status: string): Task {
     if (!isTaskStatus(status)) throw new InvalidStatusError(status);
     const current = this.mustGet(id);
+    // 동일 상태는 no-op — 이벤트도 남기지 않는다
+    if (current.status === status) return current;
+    if (status === "done") {
+      if (current.status === "cancelled") throw new InvalidTransitionError(current.status, status);
+      const open = this.children(id).filter(
+        (c) => c.archivedAt === null && c.status !== "done" && c.status !== "cancelled",
+      );
+      if (open.length > 0) {
+        throw new IncompleteSubtaskError(id, open.map((c) => c.id));
+      }
+    }
+    if (status === "cancelled" && current.status === "done") {
+      throw new InvalidTransitionError(current.status, status);
+    }
     const now = new Date().toISOString();
     this.db
       .query("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?")
       .run(status, now, id);
     this.recordEvent(id, "status_changed", { from: current.status, to: status }, now);
     return this.mustGet(id);
+  }
+
+  // 복수 ID 일괄 작업용 — 콜백이 던지면 전체 롤백
+  withTransaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)() as T;
   }
 
   remove(id: number): void {

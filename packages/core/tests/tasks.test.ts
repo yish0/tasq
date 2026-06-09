@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   DependencyCycleError,
+  IncompleteSubtaskError,
   InvalidStatusError,
+  InvalidTransitionError,
   ParentCycleError,
   TaskNotFoundError,
   TaskStore,
@@ -329,5 +331,61 @@ describe("TaskStore dependencies", () => {
     store.addDep(t.id, closed.id);
     store.setStatus(closed.id, "done");
     expect(store.openDepsOf(t.id)).toEqual([open.id]);
+  });
+});
+
+describe("TaskStore.setStatus guards", () => {
+  test("same status is a no-op without an event", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    const count = store.events(t.id).length;
+    expect(store.setStatus(t.id, "todo").status).toBe("todo");
+    expect(store.events(t.id)).toHaveLength(count);
+  });
+
+  test("blocks done while open subtasks remain", () => {
+    const store = makeStore();
+    const p = store.create({ title: "p" });
+    const c = store.create({ title: "c", parentId: p.id });
+    expect(() => store.setStatus(p.id, "done")).toThrow(IncompleteSubtaskError);
+    store.setStatus(c.id, "done");
+    expect(store.setStatus(p.id, "done").status).toBe("done");
+  });
+
+  test("cancelled subtasks do not block done", () => {
+    const store = makeStore();
+    const p = store.create({ title: "p" });
+    const c = store.create({ title: "c", parentId: p.id });
+    store.setStatus(c.id, "cancelled");
+    expect(store.setStatus(p.id, "done").status).toBe("done");
+  });
+
+  test("rejects done from cancelled and cancelled from done", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    store.setStatus(a.id, "cancelled");
+    expect(() => store.setStatus(a.id, "done")).toThrow(InvalidTransitionError);
+    const b = store.create({ title: "b" });
+    store.setStatus(b.id, "done");
+    expect(() => store.setStatus(b.id, "cancelled")).toThrow(InvalidTransitionError);
+  });
+});
+
+describe("TaskStore.withTransaction", () => {
+  test("returns the callback result", () => {
+    const store = makeStore();
+    expect(store.withTransaction(() => 42)).toBe(42);
+  });
+
+  test("rolls back everything when the callback throws", () => {
+    const store = makeStore();
+    store.create({ title: "keep" });
+    expect(() =>
+      store.withTransaction(() => {
+        store.setStatus(1, "done");
+        store.setStatus(99, "done");
+      }),
+    ).toThrow("task not found: 99");
+    expect(store.get(1)?.status).toBe("todo");
   });
 });
