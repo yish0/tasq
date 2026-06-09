@@ -12,11 +12,19 @@ describe("status", () => {
     expect(ctx.store.get(1)?.status).toBe("in_progress");
   });
 
+  test("updates multiple ids in one transaction", () => {
+    const { ctx, out } = createTestCli();
+    ctx.store.create({ title: "a" });
+    ctx.store.create({ title: "b" });
+    expect(statusCommand.run(["1", "2", "in_progress"], ctx)).toBe(0);
+    expect(out).toEqual(["#1 → in_progress", "#2 → in_progress"]);
+  });
+
   test("prints updated task JSON with --json", () => {
     const { ctx, out } = createTestCli();
     ctx.store.create({ title: "t" });
     statusCommand.run(["1", "done", "--json"], ctx);
-    expect(JSON.parse(out[0] ?? "").status).toBe("done");
+    expect(JSON.parse(out[0] ?? "")[0].status).toBe("done");
   });
 
   test("prints usage and exits 1 when id or status is missing", () => {
