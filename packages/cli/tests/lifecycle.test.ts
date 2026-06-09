@@ -55,6 +55,20 @@ describe("start", () => {
     expect(ctx.store.get(1)?.status).toBe("in_progress");
   });
 
+  test("warns once per open prerequisite", () => {
+    const { ctx, err } = createTestCli();
+    ctx.store.create({ title: "a" });
+    ctx.store.create({ title: "d1" });
+    ctx.store.create({ title: "d2" });
+    ctx.store.addDep(1, 2);
+    ctx.store.addDep(1, 3);
+    expect(startCommand.run(["1"], ctx)).toBe(0);
+    expect(err).toEqual([
+      "warning: #1 depends on incomplete #2",
+      "warning: #1 depends on incomplete #3",
+    ]);
+  });
+
   test("rejects starting from done", () => {
     const { ctx } = createTestCli();
     ctx.store.create({ title: "a" });
@@ -69,6 +83,13 @@ describe("cancel", () => {
     ctx.store.create({ title: "a" });
     expect(cancelCommand.run(["1"], ctx)).toBe(0);
     expect(out).toEqual(["#1 → cancelled"]);
+  });
+
+  test("rejects cancelling a done task", () => {
+    const { ctx } = createTestCli();
+    ctx.store.create({ title: "a" });
+    ctx.store.setStatus(1, "done");
+    expect(() => cancelCommand.run(["1"], ctx)).toThrow("invalid transition: done -> cancelled");
   });
 });
 

@@ -448,6 +448,15 @@ describe("TaskStore.setStatus guards", () => {
     expect(store.setStatus(p.id, "done").status).toBe("done");
   });
 
+  test("an archived incomplete subtask does not block done", () => {
+    const store = makeStore();
+    const p = store.create({ title: "p" });
+    const c = store.create({ title: "c", parentId: p.id });
+    store.setStatus(c.id, "in_progress");
+    store.archive(c.id);
+    expect(store.setStatus(p.id, "done").status).toBe("done");
+  });
+
   test("rejects done from cancelled and cancelled from done", () => {
     const store = makeStore();
     const a = store.create({ title: "a" });

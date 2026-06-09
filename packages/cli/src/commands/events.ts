@@ -19,6 +19,11 @@ export const eventsCommand: Command = {
       ctx.stderr(`usage: ${USAGE}`);
       return 1;
     }
+    // 없는 id는 빈 출력+성공이 아니라 show와 동일하게 명시적으로 실패시킨다
+    if (!ctx.store.get(id)) {
+      ctx.stderr(`task not found: ${id}`);
+      return 1;
+    }
     const events = ctx.store.events(id);
     if (values.json) {
       ctx.stdout(JSON.stringify(events));

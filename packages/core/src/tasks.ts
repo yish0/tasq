@@ -340,7 +340,9 @@ export class TaskStore {
     }
   }
 
-  // 자식이 있으면 recursive 없이는 HasSubtasksError. 깊은 자식부터 반환한다
+  // 자식이 있으면 recursive 없이는 HasSubtasksError. 깊은 자식부터 반환한다.
+  // includeArchived=false: 보관된 자식은 수집·차단 대상에서 제외 (archive용 — 보관 자식만 남은 부모는 -r 없이 archive 가능).
+  // includeArchived=true: 보관 자식도 포함 (hardDelete용 — 행이 남아 고아가 되는 것 방지).
   private collectSubtree(id: number, recursive: boolean, includeArchived: boolean): Task[] {
     const root = this.mustGet(id);
     let kids = this.children(id);

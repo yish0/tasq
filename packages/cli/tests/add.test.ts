@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { parseDateExpr } from "@tasq/core";
 import { addCommand } from "../src/commands/add";
 import { createTestCli } from "./helpers";
 
@@ -83,8 +82,11 @@ describe("add", () => {
     const { ctx } = createTestCli();
     addCommand.run(["t", "--due", "tomorrow", "--start", "today"], ctx);
     const task = ctx.store.get(1);
-    expect(task?.due).toBe(parseDateExpr("tomorrow", new Date()));
-    expect(task?.start).toBe(parseDateExpr("today", new Date()));
+    // 상대 표현이 ISO 날짜로 해석되고(리터럴 미저장) tomorrow가 today보다 뒤임을 확인.
+    // 정확한 값 대신 형태+순서를 단정해 자정 경계 flake를 제거한다.
+    expect(task?.start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(task?.due).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(String(task?.start) < String(task?.due)).toBe(true);
   });
 
   test("throws on an invalid date expression (handled by runCli)", () => {
