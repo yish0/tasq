@@ -21,3 +21,10 @@ export class SchemaTooNewError extends Error {
     this.name = "SchemaTooNewError";
   }
 }
+
+export class InvalidDateExprError extends Error {
+  constructor(public readonly expr: string) {
+    super(`invalid date expression: ${expr}`);
+    this.name = "InvalidDateExprError";
+  }
+}
