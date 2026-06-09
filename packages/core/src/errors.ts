@@ -11,3 +11,13 @@ export class InvalidStatusError extends Error {
     this.name = "InvalidStatusError";
   }
 }
+
+export class SchemaTooNewError extends Error {
+  constructor(
+    public readonly dbVersion: number,
+    public readonly appVersion: number,
+  ) {
+    super(`database schema v${dbVersion} is newer than supported v${appVersion} — upgrade tasq`);
+    this.name = "SchemaTooNewError";
+  }
+}

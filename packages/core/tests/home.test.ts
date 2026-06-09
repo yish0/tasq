@@ -10,11 +10,14 @@ describe("resolveTasqHome", () => {
     expect(home.root).toBe("/tmp/custom");
     expect(home.dbPath).toBe(join("/tmp/custom", "tasq.db"));
     expect(home.pluginsDir).toBe(join("/tmp/custom", "plugins"));
+    expect(home.backupsDir).toBe(join("/tmp/custom", "backups"));
   });
 
   test("defaults to ~/.tasq", () => {
     const home = resolveTasqHome({});
-    expect(home.root).toBe(join(homedir(), ".tasq"));
+    const root = join(homedir(), ".tasq");
+    expect(home.root).toBe(root);
+    expect(home.backupsDir).toBe(join(root, "backups"));
   });
 });
 
