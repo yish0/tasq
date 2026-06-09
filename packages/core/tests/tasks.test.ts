@@ -19,6 +19,8 @@ describe("TaskStore.create", () => {
     expect(task.start).toBeNull();
     expect(task.due).toBeNull();
     expect(task.externalRef).toBeNull();
+    expect(task.parentId).toBeNull();
+    expect(task.archivedAt).toBeNull();
     expect(task.createdAt).toBe(task.updatedAt);
   });
 
@@ -97,8 +99,8 @@ describe("TaskStore.list", () => {
   });
 
   test("filters by tag", () => {
-    const titles = seeded().list({ tag: "y" }).map((t) => t.title);
-    expect(titles).toEqual(["b"]);
+    const titles = seeded().list({ tags: ["x"] }).map((t) => t.title);
+    expect(titles).toEqual(["b", "a"]);
   });
 });
 

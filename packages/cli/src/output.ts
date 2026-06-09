@@ -6,6 +6,7 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
   review: "◎",
   done: "●",
   blocked: "✗",
+  cancelled: "⊘",
 };
 
 export function formatTaskLine(task: Task): string {

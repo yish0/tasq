@@ -23,7 +23,7 @@ export const listCommand: Command = {
     }
     const tasks = ctx.store.list({
       status: values.status as TaskStatus | undefined,
-      tag: values.tag,
+      tags: values.tag === undefined ? undefined : [values.tag],
       project: values.project,
     });
     if (values.json) {

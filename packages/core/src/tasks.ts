@@ -21,6 +21,8 @@ interface TaskRow {
   project: string | null;
   start: string | null;
   due: string | null;
+  parent_id: number | null;
+  archived_at: string | null;
   external_ref: string | null;
   created_at: string;
   updated_at: string;
@@ -45,6 +47,8 @@ function rowToTask(row: TaskRow): Task {
     project: row.project,
     start: row.start,
     due: row.due,
+    parentId: row.parent_id,
+    archivedAt: row.archived_at,
     externalRef: row.external_ref,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -105,9 +109,9 @@ export class TaskStore {
       .query(`SELECT * FROM tasks ${clause} ORDER BY priority DESC, id ASC`)
       .all(...params) as TaskRow[];
     let tasks = rows.map(rowToTask);
-    if (filter.tag !== undefined) {
-      const tag = filter.tag;
-      tasks = tasks.filter((t) => t.tags.includes(tag));
+    if (filter.tags !== undefined && filter.tags.length > 0) {
+      const tags = filter.tags;
+      tasks = tasks.filter((t) => tags.every((tag) => t.tags.includes(tag)));
     }
     return tasks;
   }

@@ -13,6 +13,8 @@ const base: Task = {
   start: null,
   due: null,
   externalRef: null,
+  parentId: null,
+  archivedAt: null,
   createdAt: "2026-06-06T00:00:00.000Z",
   updatedAt: "2026-06-06T01:00:00.000Z",
 };
