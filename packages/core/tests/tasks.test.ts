@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { InvalidStatusError, ParentCycleError, TaskNotFoundError, TaskStore, openDb } from "@tasq/core";
+import {
+  DependencyCycleError,
+  InvalidStatusError,
+  ParentCycleError,
+  TaskNotFoundError,
+  TaskStore,
+  openDb,
+} from "@tasq/core";
 
 function makeStore(): TaskStore {
   return new TaskStore(openDb(":memory:"));
@@ -242,5 +249,85 @@ describe("TaskStore.update event payload", () => {
         priority: { from: 1, to: 3 },
       },
     });
+  });
+});
+
+describe("TaskStore dependencies", () => {
+  test("adds a dependency and lists it", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    const b = store.create({ title: "b" });
+    store.addDep(a.id, b.id);
+    expect(store.depsOf(a.id)).toEqual([b.id]);
+    const events = store.events(a.id);
+    expect(events.at(-1)?.type).toBe("dep_added");
+    expect(events.at(-1)?.payload).toEqual({ dependsOnId: b.id });
+  });
+
+  test("duplicate add is a silent no-op without an event", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    const b = store.create({ title: "b" });
+    store.addDep(a.id, b.id);
+    const count = store.events(a.id).length;
+    store.addDep(a.id, b.id);
+    expect(store.events(a.id)).toHaveLength(count);
+  });
+
+  test("rejects self, direct and transitive cycles", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    const b = store.create({ title: "b" });
+    const c = store.create({ title: "c" });
+    expect(() => store.addDep(a.id, a.id)).toThrow(DependencyCycleError);
+    store.addDep(a.id, b.id);
+    expect(() => store.addDep(b.id, a.id)).toThrow(DependencyCycleError);
+    store.addDep(b.id, c.id);
+    expect(() => store.addDep(c.id, a.id)).toThrow(DependencyCycleError);
+  });
+
+  test("rejects missing tasks on either side", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    expect(() => store.addDep(a.id, 99)).toThrow("task not found: 99");
+    expect(() => store.addDep(99, a.id)).toThrow("task not found: 99");
+  });
+
+  test("removes a dependency with an event, no-op when absent", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    const b = store.create({ title: "b" });
+    store.addDep(a.id, b.id);
+    store.removeDep(a.id, b.id);
+    expect(store.depsOf(a.id)).toEqual([]);
+    expect(store.events(a.id).at(-1)?.type).toBe("dep_removed");
+    const count = store.events(a.id).length;
+    store.removeDep(a.id, b.id);
+    expect(store.events(a.id)).toHaveLength(count);
+  });
+
+  test("blockedTaskIds contains tasks with open deps only", () => {
+    const store = makeStore();
+    const blocked = store.create({ title: "blocked" });
+    const openDep = store.create({ title: "open" });
+    const free = store.create({ title: "free" });
+    const doneDep = store.create({ title: "done" });
+    store.addDep(blocked.id, openDep.id);
+    store.addDep(free.id, doneDep.id);
+    store.setStatus(doneDep.id, "done");
+    const ids = store.blockedTaskIds();
+    expect(ids.has(blocked.id)).toBe(true);
+    expect(ids.has(free.id)).toBe(false);
+  });
+
+  test("openDepsOf lists incomplete prerequisites", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    const open = store.create({ title: "open" });
+    const closed = store.create({ title: "closed" });
+    store.addDep(t.id, open.id);
+    store.addDep(t.id, closed.id);
+    store.setStatus(closed.id, "done");
+    expect(store.openDepsOf(t.id)).toEqual([open.id]);
   });
 });

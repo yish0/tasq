@@ -1,5 +1,10 @@
 import type { Database } from "bun:sqlite";
-import { InvalidStatusError, ParentCycleError, TaskNotFoundError } from "./errors";
+import {
+  DependencyCycleError,
+  InvalidStatusError,
+  ParentCycleError,
+  TaskNotFoundError,
+} from "./errors";
 import { isTaskStatus } from "./types";
 import type {
   CreateTaskInput,
@@ -172,6 +177,63 @@ export class TaskStore {
     return rows.map(rowToTask);
   }
 
+  addDep(taskId: number, dependsOnId: number): void {
+    this.mustGet(taskId);
+    this.mustGet(dependsOnId);
+    if (taskId === dependsOnId || this.reachable(dependsOnId, taskId)) {
+      throw new DependencyCycleError(taskId, dependsOnId);
+    }
+    const result = this.db
+      .query("INSERT OR IGNORE INTO task_deps (task_id, depends_on_id) VALUES (?, ?)")
+      .run(taskId, dependsOnId);
+    // 중복 추가는 조용히 무시 — 이벤트도 남기지 않는다
+    if (result.changes > 0) {
+      this.recordEvent(taskId, "dep_added", { dependsOnId }, new Date().toISOString());
+    }
+  }
+
+  removeDep(taskId: number, dependsOnId: number): void {
+    this.mustGet(taskId);
+    const result = this.db
+      .query("DELETE FROM task_deps WHERE task_id = ? AND depends_on_id = ?")
+      .run(taskId, dependsOnId);
+    if (result.changes > 0) {
+      this.recordEvent(taskId, "dep_removed", { dependsOnId }, new Date().toISOString());
+    }
+  }
+
+  depsOf(taskId: number): number[] {
+    const rows = this.db
+      .query("SELECT depends_on_id FROM task_deps WHERE task_id = ? ORDER BY depends_on_id")
+      .all(taskId) as { depends_on_id: number }[];
+    return rows.map((r) => r.depends_on_id);
+  }
+
+  // 미완료(done/cancelled 아님)·비보관 선행이 남아 있는 태스크 id 집합
+  blockedTaskIds(): Set<number> {
+    const rows = this.db
+      .query(
+        `SELECT DISTINCT d.task_id AS id FROM task_deps d
+         JOIN tasks t ON t.id = d.depends_on_id
+         WHERE t.status NOT IN ('done', 'cancelled') AND t.archived_at IS NULL`,
+      )
+      .all() as { id: number }[];
+    return new Set(rows.map((r) => r.id));
+  }
+
+  // start 시 경고용: 특정 태스크의 미완료 선행 목록
+  openDepsOf(taskId: number): number[] {
+    const rows = this.db
+      .query(
+        `SELECT d.depends_on_id AS id FROM task_deps d
+         JOIN tasks t ON t.id = d.depends_on_id
+         WHERE d.task_id = ? AND t.status NOT IN ('done', 'cancelled') AND t.archived_at IS NULL
+         ORDER BY id`,
+      )
+      .all(taskId) as { id: number }[];
+    return rows.map((r) => r.id);
+  }
+
   setStatus(id: number, status: string): Task {
     if (!isTaskStatus(status)) throw new InvalidStatusError(status);
     const current = this.mustGet(id);
@@ -188,6 +250,20 @@ export class TaskStore {
     const now = new Date().toISOString();
     this.db.query("DELETE FROM tasks WHERE id = ?").run(id);
     this.recordEvent(id, "deleted", {}, now);
+  }
+
+  // deps 그래프에서 from → to 도달 가능 여부 (DFS)
+  private reachable(from: number, to: number): boolean {
+    const stack = [from];
+    const seen = new Set<number>();
+    while (stack.length > 0) {
+      const cur = stack.pop() as number;
+      if (cur === to) return true;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      stack.push(...this.depsOf(cur));
+    }
+    return false;
   }
 
   // 조상 체인을 걸어 자기 자신(또는 자손을 경유한 자신)을 부모로 삼는 것을 차단
