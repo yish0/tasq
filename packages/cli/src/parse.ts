@@ -1,3 +1,5 @@
+import { parseDateExpr } from "@tasq/core";
+
 export function parseId(raw: string | undefined): number | null {
   if (raw === undefined) return null;
   const id = Number(raw);
@@ -45,4 +47,27 @@ export function parseTokens(args: string[]): ParsedTokens {
     words.push(arg);
   }
   return { words, tags, project, priority };
+}
+
+export function parseIds(raws: string[]): number[] | null {
+  if (raws.length === 0) return null;
+  const ids: number[] = [];
+  for (const raw of raws) {
+    const id = parseId(raw);
+    if (id === null) return null;
+    ids.push(id);
+  }
+  return ids;
+}
+
+// nullable 필드 클리어 컨벤션: 리터럴 'none'은 null
+export function noneToNull(value: string): string | null {
+  return value === "none" ? null : value;
+}
+
+// 날짜 옵션: 'none'은 클리어, 그 외는 날짜 표현으로 해석.
+// 실패 시 InvalidDateExprError가 위로 던져져 runCli가 stderr+exit 1 처리한다.
+export function parseDateOption(value: string, now: Date): string | null {
+  if (value === "none") return null;
+  return parseDateExpr(value, now);
 }
