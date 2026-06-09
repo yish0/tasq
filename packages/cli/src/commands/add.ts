@@ -1,9 +1,10 @@
 import { parseArgs } from "node:util";
-import { parsePriority, parseTokens } from "../parse";
+import { parseDateExpr } from "@tasq/core";
+import { parseId, parsePriority, parseTokens } from "../parse";
 import type { Command } from "../registry";
 
 const USAGE =
-  "tasq add <title> [^N] [:project] [+tag]... [--body <text>] [--priority <n>] [--tag <tag>]... [--project <name>] [--start <date>] [--due <date>] [--json]";
+  "tasq add <title> [^N] [:project] [+tag]... [--body <text>] [--priority <n>] [--tag <tag>]... [--project <name>] [--start <date>] [--due <date>] [--parent <id>] [--json]";
 
 export const addCommand: Command = {
   name: "add",
@@ -19,6 +20,7 @@ export const addCommand: Command = {
         project: { type: "string" },
         start: { type: "string" },
         due: { type: "string" },
+        parent: { type: "string" },
         json: { type: "boolean" },
       },
       allowPositionals: true,
@@ -40,14 +42,25 @@ export const addCommand: Command = {
       priority = parsed;
     }
     const tags = values.tag ?? (tokens.tags.length > 0 ? tokens.tags : undefined);
+    let parentId: number | undefined;
+    if (values.parent !== undefined) {
+      const parsed = parseId(values.parent);
+      if (parsed === null) {
+        ctx.stderr(`invalid parent: ${values.parent}`);
+        return 1;
+      }
+      parentId = parsed;
+    }
+    const now = new Date();
     const task = ctx.store.create({
       title,
       body: values.body,
       priority,
       tags,
       project: values.project ?? tokens.project,
-      start: values.start,
-      due: values.due,
+      start: values.start !== undefined ? parseDateExpr(values.start, now) : undefined,
+      due: values.due !== undefined ? parseDateExpr(values.due, now) : undefined,
+      parentId,
     });
     ctx.stdout(values.json ? JSON.stringify(task) : `created #${task.id}: ${task.title}`);
     return 0;

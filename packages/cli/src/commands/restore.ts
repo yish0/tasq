@@ -2,11 +2,11 @@ import { parseArgs } from "node:util";
 import { parseIds } from "../parse";
 import type { Command } from "../registry";
 
-const USAGE = "tasq status <id...> <todo|in_progress|review|done|blocked|cancelled> [--json]";
+const USAGE = "tasq restore <id...> [--json]";
 
-export const statusCommand: Command = {
-  name: "status",
-  description: "Change task status",
+export const restoreCommand: Command = {
+  name: "restore",
+  description: "Restore archived tasks",
   usage: USAGE,
   run(args, ctx) {
     const { values, positionals } = parseArgs({
@@ -14,20 +14,17 @@ export const statusCommand: Command = {
       options: { json: { type: "boolean" } },
       allowPositionals: true,
     });
-    const status = positionals.pop();
     const ids = parseIds(positionals);
-    if (status === undefined || ids === null) {
+    if (ids === null) {
       ctx.stderr(`usage: ${USAGE}`);
       return 1;
     }
-    const tasks = ctx.store.withTransaction(() =>
-      ids.map((id) => ctx.store.setStatus(id, status)),
-    );
+    const tasks = ctx.store.withTransaction(() => ids.map((id) => ctx.store.restore(id)));
     if (values.json === true) {
       ctx.stdout(JSON.stringify(tasks));
       return 0;
     }
-    for (const t of tasks) ctx.stdout(`#${t.id} → ${t.status}`);
+    ctx.stdout(`restored ${tasks.map((t) => `#${t.id}`).join(", ")}`);
     return 0;
   },
 };

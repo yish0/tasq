@@ -27,4 +27,10 @@ describe("events", () => {
     expect(eventsCommand.run([], ctx)).toBe(1);
     expect(err[0]).toContain("usage:");
   });
+
+  test("prints not found and exits 1 for a missing task", () => {
+    const { ctx, err } = createTestCli();
+    expect(eventsCommand.run(["99"], ctx)).toBe(1);
+    expect(err[0]).toContain("task not found: 99");
+  });
 });

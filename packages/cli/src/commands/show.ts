@@ -25,7 +25,17 @@ export const showCommand: Command = {
       ctx.stderr(`task not found: ${id}`);
       return 1;
     }
-    ctx.stdout(values.json ? JSON.stringify(task) : formatTaskDetail(task));
+    const deps = ctx.store.depsOf(id);
+    const comments = ctx.store.comments(id);
+    if (values.json === true) {
+      ctx.stdout(JSON.stringify({ ...task, deps, notes: comments }));
+      return 0;
+    }
+    const notes = comments.map((e) => ({
+      createdAt: e.createdAt,
+      text: String(e.payload.text),
+    }));
+    ctx.stdout(formatTaskDetail(task, { deps, notes }));
     return 0;
   },
 };

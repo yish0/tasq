@@ -4,6 +4,7 @@ export const TASK_STATUSES = [
   "review",
   "done",
   "blocked",
+  "cancelled",
 ] as const;
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -23,6 +24,8 @@ export interface Task {
   readonly project: string | null;
   readonly start: string | null;
   readonly due: string | null;
+  readonly parentId: number | null;
+  readonly archivedAt: string | null;
   readonly externalRef: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -37,6 +40,7 @@ export interface CreateTaskInput {
   start?: string;
   due?: string;
   externalRef?: string;
+  parentId?: number;
 }
 
 export interface UpdateTaskPatch {
@@ -48,15 +52,31 @@ export interface UpdateTaskPatch {
   start?: string | null;
   due?: string | null;
   externalRef?: string | null;
+  parentId?: number | null;
 }
 
 export interface TaskFilter {
   status?: TaskStatus;
-  tag?: string;
+  tags?: string[];
   project?: string;
+  search?: string;
+  dueBefore?: string;
+  dueAfter?: string;
+  overdueAsOf?: string;
+  ready?: boolean;
+  includeArchived?: boolean;
 }
 
-export type TaskEventType = "created" | "updated" | "status_changed" | "deleted";
+export type TaskEventType =
+  | "created"
+  | "updated"
+  | "status_changed"
+  | "comment"
+  | "dep_added"
+  | "dep_removed"
+  | "archived"
+  | "restored"
+  | "deleted";
 
 export interface TaskEvent {
   readonly id: number;

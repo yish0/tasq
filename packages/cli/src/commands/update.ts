@@ -1,10 +1,10 @@
 import { parseArgs } from "node:util";
 import type { UpdateTaskPatch } from "@tasq/core";
-import { parseId, parsePriority } from "../parse";
+import { noneToNull, parseDateOption, parseId, parsePriority } from "../parse";
 import type { Command } from "../registry";
 
 const USAGE =
-  "tasq update <id> [--title <t>] [--body <b>] [--priority <n>] [--tag <tag>]... [--project <p>] [--start <d>] [--due <d>] [--json]";
+  "tasq update <id> [--title <t>] [--body <b>] [--priority <n>] [--tag <tag>]... [--project <p|none>] [--start <d|none>] [--due <d|none>] [--parent <id|none>] [--json]";
 
 export const updateCommand: Command = {
   name: "update",
@@ -21,6 +21,7 @@ export const updateCommand: Command = {
         project: { type: "string" },
         start: { type: "string" },
         due: { type: "string" },
+        parent: { type: "string" },
         json: { type: "boolean" },
       },
       allowPositionals: true,
@@ -42,9 +43,22 @@ export const updateCommand: Command = {
       patch.priority = parsed;
     }
     if (values.tag !== undefined) patch.tags = values.tag;
-    if (values.project !== undefined) patch.project = values.project;
-    if (values.start !== undefined) patch.start = values.start;
-    if (values.due !== undefined) patch.due = values.due;
+    if (values.parent !== undefined) {
+      if (values.parent === "none") {
+        patch.parentId = null;
+      } else {
+        const parsed = parseId(values.parent);
+        if (parsed === null) {
+          ctx.stderr(`invalid parent: ${values.parent}`);
+          return 1;
+        }
+        patch.parentId = parsed;
+      }
+    }
+    const now = new Date();
+    if (values.project !== undefined) patch.project = noneToNull(values.project);
+    if (values.start !== undefined) patch.start = parseDateOption(values.start, now);
+    if (values.due !== undefined) patch.due = parseDateOption(values.due, now);
     if (Object.keys(patch).length === 0) {
       ctx.stderr("nothing to update");
       return 1;

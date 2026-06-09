@@ -10,4 +10,8 @@ describe("isTaskStatus", () => {
     expect(isTaskStatus("doing")).toBe(false);
     expect(isTaskStatus("")).toBe(false);
   });
+
+  test("recognizes cancelled as a valid status", () => {
+    expect(isTaskStatus("cancelled")).toBe(true);
+  });
 });

@@ -6,6 +6,7 @@ export interface TasqHome {
   root: string;
   dbPath: string;
   pluginsDir: string;
+  backupsDir: string;
 }
 
 export function resolveTasqHome(
@@ -16,6 +17,7 @@ export function resolveTasqHome(
     root,
     dbPath: join(root, "tasq.db"),
     pluginsDir: join(root, "plugins"),
+    backupsDir: join(root, "backups"),
   };
 }
 
