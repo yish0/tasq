@@ -108,6 +108,7 @@ export class TaskStore {
   list(filter: TaskFilter = {}): Task[] {
     const where: string[] = [];
     const params: (string | number)[] = [];
+    if (filter.includeArchived !== true) where.push("archived_at IS NULL");
     if (filter.status) {
       where.push("status = ?");
       params.push(filter.status);
@@ -115,6 +116,24 @@ export class TaskStore {
     if (filter.project) {
       where.push("project = ?");
       params.push(filter.project);
+    }
+    if (filter.dueBefore) {
+      where.push("due IS NOT NULL AND due < ?");
+      params.push(filter.dueBefore);
+    }
+    if (filter.dueAfter) {
+      where.push("due IS NOT NULL AND due > ?");
+      params.push(filter.dueAfter);
+    }
+    if (filter.overdueAsOf) {
+      where.push("due IS NOT NULL AND due < ? AND status NOT IN ('done', 'cancelled')");
+      params.push(filter.overdueAsOf);
+    }
+    if (filter.search) {
+      // LIKE 메타문자(%/_/\)는 이스케이프해서 리터럴로 매치
+      const q = `%${filter.search.replaceAll(/[\\%_]/g, "\\$&")}%`;
+      where.push("(title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\')");
+      params.push(q, q);
     }
     const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
     const rows = this.db
@@ -124,6 +143,10 @@ export class TaskStore {
     if (filter.tags !== undefined && filter.tags.length > 0) {
       const tags = filter.tags;
       tasks = tasks.filter((t) => tags.every((tag) => t.tags.includes(tag)));
+    }
+    if (filter.ready === true) {
+      const blocked = this.blockedTaskIds();
+      tasks = tasks.filter((t) => t.status === "todo" && !blocked.has(t.id));
     }
     return tasks;
   }
@@ -138,6 +161,17 @@ export class TaskStore {
       .query("SELECT * FROM events WHERE task_id = ? ORDER BY id ASC")
       .all(taskId) as EventRow[];
     return rows.map(rowToEvent);
+  }
+
+  // note 커맨드와 (Phase 2의) agent report가 공유하는 통로.
+  // 태스크 row는 건드리지 않는다 — updated_at도 그대로.
+  addComment(id: number, text: string): TaskEvent {
+    this.mustGet(id);
+    return this.recordEvent(id, "comment", { text }, new Date().toISOString());
+  }
+
+  comments(taskId: number): TaskEvent[] {
+    return this.events(taskId).filter((e) => e.type === "comment");
   }
 
   update(id: number, patch: UpdateTaskPatch): Task {
@@ -359,9 +393,10 @@ export class TaskStore {
     type: TaskEventType,
     payload: Record<string, unknown>,
     createdAt: string,
-  ): void {
-    this.db
+  ): TaskEvent {
+    const result = this.db
       .query("INSERT INTO events (task_id, type, payload, created_at) VALUES (?, ?, ?, ?)")
       .run(taskId, type, JSON.stringify(payload), createdAt);
+    return { id: Number(result.lastInsertRowid), taskId, type, payload, createdAt };
   }
 }

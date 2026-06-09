@@ -477,3 +477,90 @@ describe("TaskStore.withTransaction", () => {
     expect(store.get(1)?.status).toBe("todo");
   });
 });
+
+describe("TaskStore comments", () => {
+  test("appends a comment event without touching the task row", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    const before = store.get(t.id)?.updatedAt;
+    const event = store.addComment(t.id, "progress note");
+    expect(event.type).toBe("comment");
+    expect(event.payload).toEqual({ text: "progress note" });
+    expect(event.taskId).toBe(t.id);
+    expect(event.id).toBeGreaterThan(0);
+    expect(store.get(t.id)?.updatedAt).toBe(before as string);
+  });
+
+  test("rejects a missing task", () => {
+    const store = makeStore();
+    expect(() => store.addComment(99, "x")).toThrow("task not found: 99");
+  });
+
+  test("comments returns only comment events in order", () => {
+    const store = makeStore();
+    const t = store.create({ title: "t" });
+    store.addComment(t.id, "one");
+    store.setStatus(t.id, "in_progress");
+    store.addComment(t.id, "two");
+    expect(store.comments(t.id).map((e) => e.payload.text)).toEqual(["one", "two"]);
+  });
+});
+
+describe("TaskStore.list filters", () => {
+  test("excludes archived by default, includes with includeArchived", () => {
+    const store = makeStore();
+    store.create({ title: "live" });
+    const dead = store.create({ title: "dead" });
+    store.archive(dead.id);
+    expect(store.list().map((t) => t.title)).toEqual(["live"]);
+    expect(store.list({ includeArchived: true })).toHaveLength(2);
+  });
+
+  test("dueBefore and dueAfter are strict and skip dueless tasks", () => {
+    const store = makeStore();
+    store.create({ title: "early", due: "2026-06-10" });
+    store.create({ title: "late", due: "2026-06-20" });
+    store.create({ title: "none" });
+    expect(store.list({ dueBefore: "2026-06-15" }).map((t) => t.title)).toEqual(["early"]);
+    expect(store.list({ dueAfter: "2026-06-15" }).map((t) => t.title)).toEqual(["late"]);
+    expect(store.list({ dueBefore: "2026-06-10" })).toHaveLength(0);
+  });
+
+  test("overdueAsOf excludes finished tasks", () => {
+    const store = makeStore();
+    store.create({ title: "open", due: "2026-06-01" });
+    const closed = store.create({ title: "closed", due: "2026-06-01" });
+    store.setStatus(closed.id, "done");
+    store.create({ title: "future", due: "2026-07-01" });
+    expect(store.list({ overdueAsOf: "2026-06-15" }).map((t) => t.title)).toEqual(["open"]);
+  });
+
+  test("search matches title and body, escaping LIKE metacharacters", () => {
+    const store = makeStore();
+    store.create({ title: "fix login bug" });
+    store.create({ title: "other", body: "see login flow" });
+    store.create({ title: "100% done marker" });
+    store.create({ title: "unrelated" });
+    expect(store.list({ search: "login" })).toHaveLength(2);
+    expect(store.list({ search: "100%" }).map((t) => t.title)).toEqual(["100% done marker"]);
+    expect(store.list({ search: "0%" })).toHaveLength(1);
+  });
+
+  test("multiple tags combine with AND", () => {
+    const store = makeStore();
+    store.create({ title: "both", tags: ["a", "b"] });
+    store.create({ title: "one", tags: ["a"] });
+    expect(store.list({ tags: ["a", "b"] }).map((t) => t.title)).toEqual(["both"]);
+  });
+
+  test("ready returns unblocked todo tasks only", () => {
+    const store = makeStore();
+    const ready = store.create({ title: "ready" });
+    const blocked = store.create({ title: "blocked" });
+    const dep = store.create({ title: "dep" });
+    store.addDep(blocked.id, dep.id);
+    const started = store.create({ title: "started" });
+    store.setStatus(started.id, "in_progress");
+    expect(store.list({ ready: true }).map((t) => t.id)).toEqual([ready.id, dep.id]);
+  });
+});
