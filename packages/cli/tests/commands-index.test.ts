@@ -7,6 +7,21 @@ describe("buildRegistry", () => {
       .all()
       .map((c) => c.name)
       .sort();
-    expect(names).toEqual(["add", "events", "list", "rm", "show", "status", "update"]);
+    expect(names).toEqual([
+      "add",
+      "cancel",
+      "dep",
+      "done",
+      "events",
+      "list",
+      "note",
+      "reopen",
+      "restore",
+      "rm",
+      "show",
+      "start",
+      "status",
+      "update",
+    ]);
   });
 });
