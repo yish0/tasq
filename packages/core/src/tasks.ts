@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { InvalidStatusError, TaskNotFoundError } from "./errors";
+import { InvalidStatusError, ParentCycleError, TaskNotFoundError } from "./errors";
 import { isTaskStatus } from "./types";
 import type {
   CreateTaskInput,
@@ -69,11 +69,12 @@ export class TaskStore {
   constructor(private readonly db: Database) {}
 
   create(input: CreateTaskInput): Task {
+    if (input.parentId !== undefined) this.mustGet(input.parentId);
     const now = new Date().toISOString();
     const row = this.db
       .query(
-        `INSERT INTO tasks (title, body, priority, tags, project, start, due, external_ref, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (title, body, priority, tags, project, start, due, external_ref, parent_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          RETURNING *`,
       )
       .get(
@@ -85,6 +86,7 @@ export class TaskStore {
         input.start ?? null,
         input.due ?? null,
         input.externalRef ?? null,
+        input.parentId ?? null,
         now,
         now,
       ) as TaskRow;
@@ -130,14 +132,17 @@ export class TaskStore {
 
   update(id: number, patch: UpdateTaskPatch): Task {
     const current = this.mustGet(id);
-    const fields = Object.keys(patch);
-    if (fields.length === 0) return current;
+    const keys = Object.keys(patch) as (keyof UpdateTaskPatch)[];
+    if (keys.length === 0) return current;
+    if (patch.parentId !== undefined && patch.parentId !== null) {
+      this.assertNoParentCycle(id, patch.parentId);
+    }
     const next = { ...current, ...patch };
     const now = new Date().toISOString();
     this.db
       .query(
         `UPDATE tasks
-         SET title = ?, body = ?, priority = ?, tags = ?, project = ?, start = ?, due = ?, external_ref = ?, updated_at = ?
+         SET title = ?, body = ?, priority = ?, tags = ?, project = ?, start = ?, due = ?, external_ref = ?, parent_id = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -149,11 +154,22 @@ export class TaskStore {
         next.start,
         next.due,
         next.externalRef,
+        next.parentId,
         now,
         id,
       );
-    this.recordEvent(id, "updated", { fields }, now);
+    // 변경 전후를 기록한다 — undo(Batch B)와 감사 추적의 데이터 소스
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    for (const key of keys) changes[key] = { from: current[key], to: next[key] };
+    this.recordEvent(id, "updated", { fields: changes }, now);
     return this.mustGet(id);
+  }
+
+  children(id: number): Task[] {
+    const rows = this.db
+      .query("SELECT * FROM tasks WHERE parent_id = ? ORDER BY priority DESC, id ASC")
+      .all(id) as TaskRow[];
+    return rows.map(rowToTask);
   }
 
   setStatus(id: number, status: string): Task {
@@ -172,6 +188,15 @@ export class TaskStore {
     const now = new Date().toISOString();
     this.db.query("DELETE FROM tasks WHERE id = ?").run(id);
     this.recordEvent(id, "deleted", {}, now);
+  }
+
+  // 조상 체인을 걸어 자기 자신(또는 자손을 경유한 자신)을 부모로 삼는 것을 차단
+  private assertNoParentCycle(id: number, parentId: number): void {
+    let cursor: number | null = parentId;
+    while (cursor !== null) {
+      if (cursor === id) throw new ParentCycleError(id, parentId);
+      cursor = this.mustGet(cursor).parentId;
+    }
   }
 
   private mustGet(id: number): Task {

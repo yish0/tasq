@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { InvalidStatusError, TaskNotFoundError, TaskStore, openDb } from "@tasq/core";
+import { InvalidStatusError, ParentCycleError, TaskNotFoundError, TaskStore, openDb } from "@tasq/core";
 
 function makeStore(): TaskStore {
   return new TaskStore(openDb(":memory:"));
@@ -115,7 +115,12 @@ describe("TaskStore.update", () => {
     const events = store.events(created.id);
     expect(events).toHaveLength(2);
     expect(events[1]?.type).toBe("updated");
-    expect(events[1]?.payload).toEqual({ fields: ["title", "tags"] });
+    expect(events[1]?.payload).toEqual({
+      fields: {
+        title: { from: "old", to: "new" },
+        tags: { from: [], to: ["t"] },
+      },
+    });
   });
 
   test("clears fields with null", () => {
@@ -176,5 +181,66 @@ describe("TaskStore.remove", () => {
 
   test("throws TaskNotFoundError for missing id", () => {
     expect(() => makeStore().remove(999)).toThrow(TaskNotFoundError);
+  });
+});
+
+describe("TaskStore subtasks", () => {
+  test("creates a task under a parent", () => {
+    const store = makeStore();
+    const parent = store.create({ title: "p" });
+    const child = store.create({ title: "c", parentId: parent.id });
+    expect(child.parentId).toBe(parent.id);
+  });
+
+  test("rejects a missing parent on create", () => {
+    const store = makeStore();
+    expect(() => store.create({ title: "c", parentId: 99 })).toThrow("task not found: 99");
+  });
+
+  test("lists children ordered by priority then id", () => {
+    const store = makeStore();
+    const parent = store.create({ title: "p" });
+    store.create({ title: "low", parentId: parent.id, priority: 1 });
+    store.create({ title: "high", parentId: parent.id, priority: 5 });
+    store.create({ title: "other" });
+    expect(store.children(parent.id).map((t) => t.title)).toEqual(["high", "low"]);
+  });
+
+  test("moves a task to a new parent and clears with null", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    const b = store.create({ title: "b" });
+    expect(store.update(b.id, { parentId: a.id }).parentId).toBe(a.id);
+    expect(store.update(b.id, { parentId: null }).parentId).toBeNull();
+  });
+
+  test("rejects self and descendant as parent", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    const b = store.create({ title: "b", parentId: a.id });
+    const c = store.create({ title: "c", parentId: b.id });
+    expect(() => store.update(a.id, { parentId: a.id })).toThrow(ParentCycleError);
+    expect(() => store.update(a.id, { parentId: c.id })).toThrow(ParentCycleError);
+  });
+
+  test("rejects a missing parent on update", () => {
+    const store = makeStore();
+    const a = store.create({ title: "a" });
+    expect(() => store.update(a.id, { parentId: 99 })).toThrow("task not found: 99");
+  });
+});
+
+describe("TaskStore.update event payload", () => {
+  test("records before and after values per field", () => {
+    const store = makeStore();
+    const task = store.create({ title: "old", priority: 1 });
+    store.update(task.id, { title: "new", priority: 3 });
+    const updated = store.events(task.id).find((e) => e.type === "updated");
+    expect(updated?.payload).toEqual({
+      fields: {
+        title: { from: "old", to: "new" },
+        priority: { from: 1, to: 3 },
+      },
+    });
   });
 });
